@@ -252,6 +252,38 @@ export type Database = {
           },
         ]
       }
+      empresa_import_layouts: {
+        Row: {
+          created_at: string
+          empresa_id: string
+          id: string
+          map_schema: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          empresa_id: string
+          id?: string
+          map_schema?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          empresa_id?: string
+          id?: string
+          map_schema?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "empresa_import_layouts_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: true
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           cnpj: string
@@ -740,14 +772,11 @@ export type Database = {
       empresa_status: "ativa" | "em_implementacao"
       lote_status:
         | "rascunho"
-        | "validando"
-        | "em_cotacao"
-        | "cotado"
-        | "aprovado"
-        | "enviado"
+        | "aguardando_processamento"
+        | "em_analise_seguradora"
+        | "com_pendencia"
         | "concluido"
-        | "aguardando_correcao"
-        | "aguardando_finalizacao"
+        | "faturado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -880,14 +909,11 @@ export const Constants = {
       empresa_status: ["ativa", "em_implementacao"],
       lote_status: [
         "rascunho",
-        "validando",
-        "em_cotacao",
-        "cotado",
-        "aprovado",
-        "enviado",
+        "aguardando_processamento",
+        "em_analise_seguradora",
+        "com_pendencia",
         "concluido",
-        "aguardando_correcao",
-        "aguardando_finalizacao",
+        "faturado",
       ],
     },
   },
