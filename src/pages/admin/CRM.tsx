@@ -14,10 +14,11 @@ export interface EmpresaCRM {
   cnpj: string;
   email_contato: string | null;
   telefone_contato: string | null;
-  emails_contato?: any;
-  telefones_contato?: any;
+  emails_contato?: string[];
+  telefones_contato?: string[];
   nome_responsavel: string | null;
   status_crm: string;
+  status: 'ativa' | 'em_implementacao';
   created_at: string;
 }
 
@@ -42,11 +43,11 @@ const CRM = () => {
     try {
       const { data, error } = await supabase
         .from("empresas")
-        .select("id, nome, cnpj, email_contato, telefone_contato, emails_contato, telefones_contato, nome_responsavel, status_crm, created_at")
+        .select("id, nome, cnpj, email_contato, telefone_contato, emails_contato, telefones_contato, nome_responsavel, status_crm, status, created_at")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setEmpresas(data || []);
+      setEmpresas((data || []) as EmpresaCRM[]);
     } catch (error) {
       console.error("Erro ao buscar empresas:", error);
       toast.error("Erro ao carregar empresas");
