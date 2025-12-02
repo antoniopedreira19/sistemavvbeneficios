@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Plus, Pencil, Trash2, Search } from "lucide-react";
+import { formatTelefone, formatEmail } from "@/lib/validators";
 import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -224,8 +225,8 @@ const Empresas = () => {
                   <TableRow key={empresa.id}>
                     <TableCell className="font-medium">{empresa.nome}</TableCell>
                     <TableCell>{empresa.cnpj}</TableCell>
-                    <TableCell>{empresa.email_contato}</TableCell>
-                    <TableCell>{empresa.telefone_contato}</TableCell>
+                    <TableCell>{formatEmail(empresa.email_contato || "")}</TableCell>
+                    <TableCell>{formatTelefone(empresa.telefone_contato || "")}</TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
                         empresa.status === 'ativa' 

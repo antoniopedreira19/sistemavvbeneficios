@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, Mail, Phone } from "lucide-react";
 import { EmpresaCRM } from "@/pages/admin/CRM";
-import { formatTelefone } from "@/lib/validators";
+import { formatTelefone, formatEmail } from "@/lib/validators";
 
 interface CRMKanbanProps {
   empresasByStatus: Record<string, EmpresaCRM[]>;
@@ -117,7 +117,7 @@ const CRMKanban = ({
                           <div className="space-y-0.5">
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Mail className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{uniqueEmails[0]}</span>
+                              <span className="truncate">{formatEmail(uniqueEmails[0])}</span>
                             </div>
                             {uniqueEmails.length > 1 && (
                               <p className="text-xs text-muted-foreground pl-5">+{uniqueEmails.length - 1} mais</p>
