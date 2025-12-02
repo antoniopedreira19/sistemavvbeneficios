@@ -212,12 +212,12 @@ const Empresas = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>CNPJ</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="w-[200px]">Nome</TableHead>
+                  <TableHead className="w-[150px]">CNPJ</TableHead>
+                  <TableHead className="max-w-[250px]">Email</TableHead>
+                  <TableHead className="w-[140px]">Telefone</TableHead>
+                  <TableHead className="w-[130px]">Status</TableHead>
+                  <TableHead className="text-right w-[100px]">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -225,7 +225,7 @@ const Empresas = () => {
                   <TableRow key={empresa.id}>
                     <TableCell className="font-medium">{empresa.nome}</TableCell>
                     <TableCell>{empresa.cnpj}</TableCell>
-                    <TableCell>{formatEmail(empresa.email_contato || "")}</TableCell>
+                    <TableCell className="max-w-[250px] truncate">{formatEmail(empresa.email_contato || "")}</TableCell>
                     <TableCell>{formatTelefone(empresa.telefone_contato || "")}</TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
