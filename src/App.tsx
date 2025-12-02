@@ -10,29 +10,21 @@ import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 // Admin Pages
-import Pendencias from "./pages/admin/Pendencias";
-import Envios from "./pages/admin/Envios";
-import ValidarReprovados from "./pages/admin/ValidarReprovados";
-import AdminRelatorios from "./pages/admin/Relatorios";
-import Apolices from "./pages/admin/Apolices";
-import Empresas from "./pages/admin/Empresas";
-import Usuarios from "./pages/admin/Usuarios";
+import Dashboard from "./pages/admin/Dashboard";
+import Operacional from "./pages/admin/Operacional";
 import NotasFiscais from "./pages/admin/NotasFiscais";
-import CRM from "./pages/admin/CRM";
-import VisaoGeral from "./pages/admin/VisaoGeral";
+import AdminEmpresas from "./pages/admin/AdminEmpresas";
+import Configuracoes from "./pages/admin/Configuracoes";
 
 // Cliente Pages
-import Colaboradores from "./pages/cliente/Colaboradores";
-import Aprovacao from "./pages/cliente/Aprovacao";
-import ClienteRelatorios from "./pages/cliente/Relatorios";
-import Reprovacoes from "./pages/cliente/Reprovacoes";
-import Obras from "./pages/cliente/Obras";
+import ClienteDashboard from "./pages/cliente/ClienteDashboard";
+import MinhaEquipe from "./pages/cliente/MinhaEquipe";
+import Historico from "./pages/cliente/Historico";
+
 const queryClient = new QueryClient();
-const DashboardLayout = ({
-  children
-}: {
-  children: React.ReactNode;
-}) => <SidebarProvider>
+
+const DashboardLayout = ({ children }: { children: React.ReactNode }) => (
+  <SidebarProvider>
     <div className="flex min-h-screen w-full">
       <AppSidebar />
       <div className="flex-1 flex flex-col">
@@ -45,108 +37,113 @@ const DashboardLayout = ({
         </main>
       </div>
     </div>
-  </SidebarProvider>;
-const App = () => <QueryClientProvider client={queryClient}>
+  </SidebarProvider>
+);
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
     <Toaster />
     <Sonner />
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<Auth />} />
-        <Route path="/" element={<ProtectedRoute>
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
               <Index />
-            </ProtectedRoute>} />
-          
-          {/* Admin Routes */}
-          <Route path="/admin/pendencias" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Pendencias />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/envios" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Envios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/cotacoes" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Envios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/aprovacoes" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Envios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/validar-reprovados" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <ValidarReprovados />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/relatorios" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <AdminRelatorios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/apolices" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Apolices />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/empresas" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Empresas />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/usuarios" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <Usuarios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/crm" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <CRM />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/notas-fiscais" element={<ProtectedRoute requireAdminOrFinanceiro>
-                <DashboardLayout>
-                  <NotasFiscais />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/admin/visao-geral" element={<ProtectedRoute requireAdmin>
-                <DashboardLayout>
-                  <VisaoGeral />
-                </DashboardLayout>
-              </ProtectedRoute>} />
+            </ProtectedRoute>
+          }
+        />
 
-          {/* Cliente Routes */}
-          <Route path="/cliente/obras" element={<ProtectedRoute>
-                <DashboardLayout>
-                  <Obras />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/cliente/colaboradores" element={<ProtectedRoute>
-                <DashboardLayout>
-                  <Colaboradores />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/cliente/aprovacao" element={<ProtectedRoute>
-                <DashboardLayout>
-                  <Aprovacao />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/cliente/relatorios" element={<ProtectedRoute>
-                <DashboardLayout>
-                  <ClienteRelatorios />
-                </DashboardLayout>
-              </ProtectedRoute>} />
-          <Route path="/cliente/reprovacoes" element={<ProtectedRoute>
-                <DashboardLayout>
-                  <Reprovacoes />
-                </DashboardLayout>
-              </ProtectedRoute>} />
+        {/* Admin Routes */}
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute requireAdmin>
+              <DashboardLayout>
+                <Dashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/operacional"
+          element={
+            <ProtectedRoute requireAdmin>
+              <DashboardLayout>
+                <Operacional />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/financeiro"
+          element={
+            <ProtectedRoute requireAdminOrFinanceiro>
+              <DashboardLayout>
+                <NotasFiscais />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/empresas"
+          element={
+            <ProtectedRoute requireAdmin>
+              <DashboardLayout>
+                <AdminEmpresas />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/configuracoes"
+          element={
+            <ProtectedRoute requireAdminOnly>
+              <DashboardLayout>
+                <Configuracoes />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-  </QueryClientProvider>;
+        {/* Cliente Routes */}
+        <Route
+          path="/cliente/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <ClienteDashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cliente/minha-equipe"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <MinhaEquipe />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cliente/historico"
+          element={
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Historico />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  </QueryClientProvider>
+);
+
 export default App;

@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, Mail, Phone } from "lucide-react";
-import { EmpresaCRM } from "@/pages/admin/CRM";
+import { EmpresaCRM } from "@/types/crm";
 import { formatTelefone, formatEmail } from "@/lib/validators";
 
 interface CRMKanbanProps {
@@ -105,7 +105,7 @@ const CRMKanban = ({
                       </div>
 
                       {(() => {
-                        const emailsArray: string[] = (empresa as any).emails_contato || [];
+                        const emailsArray: string[] = empresa.emails_contato || [];
                         const allEmails = empresa.email_contato 
                           ? [empresa.email_contato, ...emailsArray] 
                           : emailsArray;
@@ -127,7 +127,7 @@ const CRMKanban = ({
                       })()}
 
                       {(() => {
-                        const telefonesArray: string[] = (empresa as any).telefones_contato || [];
+                        const telefonesArray: string[] = empresa.telefones_contato || [];
                         const allTelefones = empresa.telefone_contato 
                           ? [empresa.telefone_contato, ...telefonesArray] 
                           : telefonesArray;
