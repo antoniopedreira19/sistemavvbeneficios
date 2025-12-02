@@ -90,11 +90,11 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     const existingTelefones = empresa.telefones_contato || [];
     
     // Remove main email from array if it exists there to avoid duplication
-    const filteredEmails = existingEmails.filter(e => e !== empresa.email_contato);
-    const filteredTelefones = existingTelefones.filter(t => t !== empresa.telefone_contato);
+    const filteredEmails = existingEmails.filter((e: string) => e !== empresa.email_contato);
+    const filteredTelefones = existingTelefones.filter((t: string) => t !== empresa.telefone_contato);
     
-    setEmails(filteredEmails.length > 0 ? filteredEmails : [""]);
-    setTelefones(filteredTelefones.length > 0 ? filteredTelefones : [""]);
+    setEmails(filteredEmails);
+    setTelefones(filteredTelefones);
   }, [empresa, form]);
 
   const addEmail = () => setEmails((prev) => [...prev, ""]);
@@ -255,16 +255,14 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                     onChange={(e) => updateEmail(index, e.target.value)}
                     placeholder="email@exemplo.com"
                   />
-                  {emails.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => removeEmail(index)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeEmail(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
               <Button
@@ -292,16 +290,14 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                     placeholder="(00) 00000-0000"
                     maxLength={15}
                   />
-                  {telefones.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => removeTelefone(index)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeTelefone(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
               <Button
