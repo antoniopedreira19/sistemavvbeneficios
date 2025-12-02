@@ -101,9 +101,9 @@ const EmpresaDetailDialog = ({
     email_contato: empresa.email_contato,
     telefone_contato: empresa.telefone_contato,
     nome_responsavel: empresa.nome_responsavel,
-    status: "em_implementacao" as const,
-    emails_contato: (empresa as any).emails_contato || [],
-    telefones_contato: (empresa as any).telefones_contato || [],
+    status: (empresa as any).status || "em_implementacao" as const,
+    emails_contato: empresa.emails_contato || [],
+    telefones_contato: empresa.telefones_contato || [],
   };
 
   return (
