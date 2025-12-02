@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmpresaCRM } from "@/pages/admin/CRM";
-import { formatTelefone } from "@/lib/validators";
+import { formatTelefone, formatEmail } from "@/lib/validators";
 
 interface CRMListProps {
   empresas: EmpresaCRM[];
@@ -76,7 +76,7 @@ const CRMList = ({ empresas, statusLabels, onSelectEmpresa }: CRMListProps) => {
                       return uniqueEmails.length > 0 && (
                         <div className="space-y-0.5">
                           {uniqueEmails.slice(0, 2).map((email: string, idx: number) => (
-                            <p key={idx} className={idx === 0 ? "text-sm text-foreground" : "text-xs text-muted-foreground"}>{email}</p>
+                            <p key={idx} className={idx === 0 ? "text-sm text-foreground" : "text-xs text-muted-foreground"}>{formatEmail(email)}</p>
                           ))}
                           {uniqueEmails.length > 2 && (
                             <p className="text-xs text-muted-foreground">+{uniqueEmails.length - 2} mais</p>

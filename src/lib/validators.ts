@@ -18,9 +18,11 @@ export const formatCPF = (value: string): string => {
 };
 
 export const formatTelefone = (value: string): string => {
+  if (!value) return "";
   const numbers = value.replace(/\D/g, "");
   
-  if (numbers.length <= 2) return numbers.length === 0 ? "" : `(${numbers}`;
+  if (numbers.length === 0) return "";
+  if (numbers.length <= 2) return `(${numbers}`;
   if (numbers.length <= 6) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
   if (numbers.length <= 10) return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
@@ -28,6 +30,11 @@ export const formatTelefone = (value: string): string => {
 
 // Alias para compatibilidade
 export const formatPhone = formatTelefone;
+
+export const formatEmail = (value: string): string => {
+  if (!value) return "";
+  return value.trim().toLowerCase();
+};
 
 export const validateCNPJ = (cnpj: string): boolean => {
   const numbers = cnpj.replace(/\D/g, "");
