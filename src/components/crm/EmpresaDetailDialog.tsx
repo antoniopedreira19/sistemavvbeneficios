@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building2, Mail, Phone, FileText, User, Pencil, Calendar } from "lucide-react";
-import { EmpresaCRM } from "@/pages/admin/CRM";
+import { EmpresaCRM, LOTE_STATUS_LABELS } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -93,7 +93,6 @@ const EmpresaDetailDialog = ({
     onEmpresaUpdated();
   };
 
-  // Convert EmpresaCRM to Empresa format for EditarEmpresaDialog
   const empresaForEdit = {
     id: empresa.id,
     nome: empresa.nome,
@@ -101,7 +100,7 @@ const EmpresaDetailDialog = ({
     email_contato: empresa.email_contato,
     telefone_contato: empresa.telefone_contato,
     nome_responsavel: empresa.nome_responsavel,
-    status: (empresa as any).status || "em_implementacao" as const,
+    status: "em_implementacao" as const,
     emails_contato: empresa.emails_contato || [],
     telefones_contato: empresa.telefones_contato || [],
   };
@@ -163,7 +162,7 @@ const EmpresaDetailDialog = ({
                   E-mails para Contato
                 </Label>
                 {(() => {
-                  const emailsArray = (empresa as any).emails_contato || [];
+                  const emailsArray = empresa.emails_contato || [];
                   const allEmails = empresa.email_contato 
                     ? [empresa.email_contato, ...emailsArray] 
                     : emailsArray;
@@ -187,7 +186,7 @@ const EmpresaDetailDialog = ({
                   Telefones para Contato
                 </Label>
                 {(() => {
-                  const telefonesArray = (empresa as any).telefones_contato || [];
+                  const telefonesArray = empresa.telefones_contato || [];
                   const allTelefones = empresa.telefone_contato 
                     ? [empresa.telefone_contato, ...telefonesArray] 
                     : telefonesArray;
@@ -265,14 +264,7 @@ const EmpresaDetailDialog = ({
                           {lote.competencia}
                         </span>
                         <Badge variant="outline" className="ml-auto text-xs">
-                          {lote.status === "concluido" ? "Concluído" : 
-                           lote.status === "enviado" ? "Enviado" :
-                           lote.status === "aprovado" ? "Aprovado" :
-                           lote.status === "cotado" ? "Cotado" :
-                           lote.status === "em_cotacao" ? "Em Cotação" :
-                           lote.status === "aguardando_correcao" ? "Aguard. Correção" :
-                           lote.status === "aguardando_finalizacao" ? "Aguard. Finalização" :
-                           lote.status}
+                          {LOTE_STATUS_LABELS[lote.status] || lote.status}
                         </Badge>
                       </div>
                     ))}

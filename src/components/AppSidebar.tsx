@@ -1,4 +1,4 @@
-import { Building2, Users, FileText, TrendingUp, Package, List, CheckCircle, LayoutDashboard, LogOut, UserCog, XCircle, Receipt, FileCheck, ShieldCheck, Kanban, Eye } from "lucide-react";
+import { LayoutDashboard, Briefcase, Receipt, Building2, Settings, Upload, Users, History, LogOut, UserCog, ShieldCheck } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -21,28 +21,21 @@ import { Button } from "@/components/ui/button";
 import EditarPerfilDialog from "@/components/cliente/EditarPerfilDialog";
 
 const adminItems = [
-  { title: "Pendências", url: "/admin/pendencias", icon: LayoutDashboard },
-  { title: "Listas", url: "/admin/envios", icon: List },
-  { title: "Validar Reprovados", url: "/admin/validar-reprovados", icon: XCircle },
-  { title: "Relatórios", url: "/admin/relatorios", icon: FileCheck },
-  { title: "Apólices", url: "/admin/apolices", icon: ShieldCheck },
-  { title: "Notas Fiscais", url: "/admin/notas-fiscais", icon: Receipt, adminOrFinanceiro: true },
-  { title: "Visão Geral", url: "/admin/visao-geral", icon: Eye },
-  { title: "CRM", url: "/admin/crm", icon: Kanban },
+  { title: "Visão Geral", url: "/admin/dashboard", icon: LayoutDashboard },
+  { title: "Operacional", url: "/admin/operacional", icon: Briefcase },
+  { title: "Financeiro", url: "/admin/financeiro", icon: Receipt, adminOrFinanceiro: true },
   { title: "Empresas", url: "/admin/empresas", icon: Building2 },
-  { title: "Usuários", url: "/admin/usuarios", icon: Users },
+  { title: "Configurações", url: "/admin/configuracoes", icon: Settings, adminOnly: true },
 ];
 
 const financeiroItems = [
-  { title: "Notas Fiscais", url: "/admin/notas-fiscais", icon: Receipt },
+  { title: "Financeiro", url: "/admin/financeiro", icon: Receipt },
 ];
 
 const clienteItems = [
-  { title: "Obras", url: "/cliente/obras", icon: Building2 },
-  { title: "Colaboradores", url: "/cliente/colaboradores", icon: Users },
-  { title: "Aprovar Preços", url: "/cliente/aprovacao", icon: CheckCircle },
-  { title: "Reprovações", url: "/cliente/reprovacoes", icon: XCircle },
-  { title: "Relatórios", url: "/cliente/relatorios", icon: FileText },
+  { title: "Painel", url: "/cliente/dashboard", icon: Upload },
+  { title: "Minha Equipe", url: "/cliente/minha-equipe", icon: Users },
+  { title: "Histórico", url: "/cliente/historico", icon: History },
 ];
 
 export function AppSidebar() {
@@ -58,7 +51,9 @@ export function AppSidebar() {
     ? financeiroItems
     : isAdminOrOperacional 
     ? adminItems.filter(item => {
-        // Indicadores e Notas Fiscais são apenas para Admin e Financeiro, não Operacional
+        if (item.adminOnly) {
+          return isAdmin;
+        }
         if (item.adminOrFinanceiro) {
           return isAdmin || isFinanceiro;
         }

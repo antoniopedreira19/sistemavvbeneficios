@@ -7,7 +7,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { EmpresaCRM } from "@/pages/admin/CRM";
+import { EmpresaCRM } from "@/types/crm";
 import { formatTelefone, formatEmail } from "@/lib/validators";
 
 interface CRMListProps {
@@ -67,7 +67,7 @@ const CRMList = ({ empresas, statusLabels, onSelectEmpresa }: CRMListProps) => {
                 <TableCell>
                   <div className="space-y-1">
                     {(() => {
-                      const emailsArray = (empresa as any).emails_contato || [];
+                      const emailsArray = empresa.emails_contato || [];
                       const allEmails = empresa.email_contato 
                         ? [empresa.email_contato, ...emailsArray] 
                         : emailsArray;
@@ -86,7 +86,7 @@ const CRMList = ({ empresas, statusLabels, onSelectEmpresa }: CRMListProps) => {
                     })()}
                     
                     {(() => {
-                      const telefonesArray = (empresa as any).telefones_contato || [];
+                      const telefonesArray = empresa.telefones_contato || [];
                       const allTelefones = empresa.telefone_contato 
                         ? [empresa.telefone_contato, ...telefonesArray] 
                         : telefonesArray;
@@ -105,8 +105,8 @@ const CRMList = ({ empresas, statusLabels, onSelectEmpresa }: CRMListProps) => {
                     })()}
                     
                     {(() => {
-                      const emailsArray = (empresa as any).emails_contato || [];
-                      const telefonesArray = (empresa as any).telefones_contato || [];
+                      const emailsArray = empresa.emails_contato || [];
+                      const telefonesArray = empresa.telefones_contato || [];
                       const allEmails = empresa.email_contato ? [empresa.email_contato, ...emailsArray] : emailsArray;
                       const allTelefones = empresa.telefone_contato ? [empresa.telefone_contato, ...telefonesArray] : telefonesArray;
                       const hasAnyContact = allEmails.some(e => e && e.trim() !== "") || allTelefones.some(t => t && t.trim() !== "");
