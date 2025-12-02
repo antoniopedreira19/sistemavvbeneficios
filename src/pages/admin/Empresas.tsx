@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Search, ArrowUpAZ, ArrowDownAZ } from "lucide-react";
 import { formatTelefone, formatEmail } from "@/lib/validators";
 import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
@@ -46,6 +46,7 @@ const Empresas = () => {
   const [deletingEmpresa, setDeletingEmpresa] = useState<Empresa | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const { toast } = useToast();
 
   const fetchEmpresas = useCallback(async () => {
@@ -91,13 +92,18 @@ const Empresas = () => {
     return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
   }).length;
 
-  // Filtrar empresas por busca e status
-  const empresasFiltradas = empresas.filter(e => {
-    const matchesSearch = e.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.cnpj.includes(searchTerm);
-    const matchesStatus = statusFilter === "all" || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Filtrar e ordenar empresas
+  const empresasFiltradas = empresas
+    .filter(e => {
+      const matchesSearch = e.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.cnpj.includes(searchTerm);
+      const matchesStatus = statusFilter === "all" || e.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      const comparison = a.nome.localeCompare(b.nome, 'pt-BR');
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
 
   const handleDelete = useCallback(async () => {
     if (!deletingEmpresa) return;
@@ -195,6 +201,14 @@ const Empresas = () => {
                 <SelectItem value="em_implementacao">Em Implementação</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              title={sortOrder === "asc" ? "Ordenar Z-A" : "Ordenar A-Z"}
+            >
+              {sortOrder === "asc" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>

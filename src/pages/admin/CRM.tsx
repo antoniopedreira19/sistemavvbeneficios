@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, LayoutGrid, List, Building2 } from "lucide-react";
+import { Search, LayoutGrid, List, Building2, ArrowUpAZ, ArrowDownAZ } from "lucide-react";
 import CRMKanban from "@/components/crm/CRMKanban";
 import CRMList from "@/components/crm/CRMList";
 import EmpresaDetailDialog from "@/components/crm/EmpresaDetailDialog";
@@ -38,6 +38,7 @@ const CRM = () => {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const fetchEmpresas = useCallback(async () => {
     try {
@@ -105,11 +106,16 @@ const CRM = () => {
     setDialogOpen(true);
   };
 
-  const filteredEmpresas = empresas.filter((empresa) =>
-    empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    empresa.cnpj.includes(searchTerm) ||
-    empresa.email_contato?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmpresas = empresas
+    .filter((empresa) =>
+      empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      empresa.cnpj.includes(searchTerm) ||
+      empresa.email_contato?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => {
+      const comparison = a.nome.localeCompare(b.nome, 'pt-BR');
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
 
   const empresasByStatus = {
     sem_retorno: filteredEmpresas.filter((e) => e.status_crm === "sem_retorno"),
@@ -163,6 +169,14 @@ const CRM = () => {
             className="pl-10"
           />
         </div>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+          title={sortOrder === "asc" ? "Ordenar Z-A" : "Ordenar A-Z"}
+        >
+          {sortOrder === "asc" ? <ArrowUpAZ className="h-4 w-4" /> : <ArrowDownAZ className="h-4 w-4" />}
+        </Button>
       </div>
 
       {loading ? (
