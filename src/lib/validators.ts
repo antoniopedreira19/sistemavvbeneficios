@@ -1,0 +1,88 @@
+export const formatCNPJ = (value: string): string => {
+  const numbers = value.replace(/\D/g, "");
+  
+  if (numbers.length <= 2) return numbers;
+  if (numbers.length <= 5) return `${numbers.slice(0, 2)}.${numbers.slice(2)}`;
+  if (numbers.length <= 8) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5)}`;
+  if (numbers.length <= 12) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8)}`;
+  return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8, 12)}-${numbers.slice(12, 14)}`;
+};
+
+export const formatCPF = (value: string): string => {
+  const numbers = value.replace(/\D/g, "");
+  
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
+  if (numbers.length <= 9) return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
+  return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9, 11)}`;
+};
+
+export const formatTelefone = (value: string): string => {
+  const numbers = value.replace(/\D/g, "");
+  
+  if (numbers.length <= 2) return numbers.length === 0 ? "" : `(${numbers}`;
+  if (numbers.length <= 6) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  if (numbers.length <= 10) return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
+};
+
+// Alias para compatibilidade
+export const formatPhone = formatTelefone;
+
+export const validateCNPJ = (cnpj: string): boolean => {
+  const numbers = cnpj.replace(/\D/g, "");
+  
+  if (numbers.length !== 14) return false;
+  
+  // Verifica se todos os dígitos são iguais
+  if (/^(\d)\1+$/.test(numbers)) return false;
+  
+  // Validação do primeiro dígito verificador
+  let sum = 0;
+  let weight = 5;
+  for (let i = 0; i < 12; i++) {
+    sum += parseInt(numbers.charAt(i)) * weight;
+    weight = weight === 2 ? 9 : weight - 1;
+  }
+  let digit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (digit !== parseInt(numbers.charAt(12))) return false;
+  
+  // Validação do segundo dígito verificador
+  sum = 0;
+  weight = 6;
+  for (let i = 0; i < 13; i++) {
+    sum += parseInt(numbers.charAt(i)) * weight;
+    weight = weight === 2 ? 9 : weight - 1;
+  }
+  digit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (digit !== parseInt(numbers.charAt(13))) return false;
+  
+  return true;
+};
+
+export const validateCPF = (cpf: string): boolean => {
+  const numbers = cpf.replace(/\D/g, "");
+  
+  if (numbers.length !== 11) return false;
+  
+  // Verifica se todos os dígitos são iguais
+  if (/^(\d)\1+$/.test(numbers)) return false;
+  
+  // Validação do primeiro dígito verificador
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(numbers.charAt(i)) * (10 - i);
+  }
+  let digit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (digit !== parseInt(numbers.charAt(9))) return false;
+  
+  // Validação do segundo dígito verificador
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(numbers.charAt(i)) * (11 - i);
+  }
+  digit = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (digit !== parseInt(numbers.charAt(10))) return false;
+  
+  return true;
+};
