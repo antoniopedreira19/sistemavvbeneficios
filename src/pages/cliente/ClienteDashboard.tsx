@@ -41,9 +41,7 @@ const ClienteDashboard = () => {
 
   // Estados
   const [isEnvioDialogOpen, setIsEnvioDialogOpen] = useState(false);
-  const [isConfirmEnvioOpen, setIsConfirmEnvioOpen] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [loteParaEnviar, setLoteParaEnviar] = useState<any>(null);
 
   // Competência atual (mês/ano)
   const now = new Date();
@@ -118,19 +116,39 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
-  // Buscar todas as obras da empresa
+  // Buscar todas as obras da empresa com contagem de colaboradores
   const { data: obras } = useQuery({
-    queryKey: ["obras-empresa", empresaId],
+    queryKey: ["obras-empresa-com-colaboradores", empresaId],
     queryFn: async () => {
       if (!empresaId) return [];
-      const { data, error } = await supabase
+      
+      // Buscar obras ativas
+      const { data: obrasData, error: obrasError } = await supabase
         .from("obras")
         .select("id, nome, status")
         .eq("empresa_id", empresaId)
         .eq("status", "ativa")
         .order("nome");
-      if (error) throw error;
-      return data || [];
+      if (obrasError) throw obrasError;
+      
+      // Para cada obra, contar colaboradores ativos
+      const obrasComColaboradores = await Promise.all(
+        (obrasData || []).map(async (obra) => {
+          const { count, error } = await supabase
+            .from("colaboradores")
+            .select("*", { count: "exact", head: true })
+            .eq("empresa_id", empresaId)
+            .eq("obra_id", obra.id)
+            .eq("status", "ativo");
+          
+          return {
+            ...obra,
+            totalColaboradores: count || 0
+          };
+        })
+      );
+      
+      return obrasComColaboradores;
     },
     enabled: !!empresaId,
   });
@@ -171,59 +189,117 @@ const ClienteDashboard = () => {
   // Lote principal para exibição de status
   const loteAtual = loteEmAndamento || lotesAtuais?.[0];
 
-  // Mapear obras com seus lotes do mês atual
+  // Mapear obras com seus lotes do mês atual e colaboradores
   const obrasComStatus = obras?.map(obra => {
     const lote = lotesAtuais?.find(l => l.obra_id === obra.id);
+    const jaEnviado = lote && lote.status !== "rascunho";
+    
     return {
       ...obra,
       lote,
-      totalVidas: lote?.total_colaboradores || 0,
+      totalVidas: obra.totalColaboradores || 0, // Colaboradores na tabela principal
       status: lote?.status || null,
-      temLista: lote && (lote.total_colaboradores || 0) > 0,
-      jaEnviado: lote && lote.status !== "rascunho"
+      temLista: (obra.totalColaboradores || 0) > 0, // Tem colaboradores = pronto para enviar
+      jaEnviado
     };
   }) || [];
 
-  // Verificar se há alguma obra pronta para enviar
+  // Verificar se há alguma obra pronta para enviar (tem colaboradores e não foi enviado ainda)
   const obrasParaEnviar = obrasComStatus.filter(o => o.temLista && !o.jaEnviado);
-  const obrasSemLista = obrasComStatus.filter(o => !o.temLista && !o.jaEnviado);
+  const obrasSemLista = obrasComStatus.filter(o => !o.temLista);
 
   // Handler para abrir dialog de envio
   const handleEnviarLista = () => {
     setIsEnvioDialogOpen(true);
   };
 
-  // Handler para selecionar lote e abrir confirmação
-  const handleSelecionarLote = (lote: any) => {
-    setLoteParaEnviar(lote);
-    setIsEnvioDialogOpen(false);
-    setIsConfirmEnvioOpen(true);
-  };
-
-  // Handler para confirmar envio (submeter para processamento)
-  const handleConfirmarEnvio = async () => {
-    if (!loteParaEnviar) return;
-    
+  // Handler para selecionar obra e enviar
+  const handleSelecionarObra = async (obra: any) => {
     setEnviando(true);
     
     try {
-      const { error } = await supabase
+      // 1. Criar ou buscar lote para esta competência/obra
+      let loteId = obra.lote?.id;
+      
+      if (!loteId) {
+        const { data: novoLote, error: loteError } = await supabase
+          .from("lotes_mensais")
+          .insert({
+            empresa_id: empresaId,
+            obra_id: obra.id,
+            competencia: competenciaAtualCapitalized,
+            status: "rascunho",
+            total_colaboradores: obra.totalVidas
+          })
+          .select()
+          .single();
+        
+        if (loteError) throw loteError;
+        loteId = novoLote.id;
+      }
+      
+      // 2. Buscar colaboradores ativos desta obra
+      const { data: colaboradores, error: colabError } = await supabase
+        .from("colaboradores")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("obra_id", obra.id)
+        .eq("status", "ativo");
+      
+      if (colabError) throw colabError;
+      
+      // 3. Criar snapshots em colaboradores_lote (se ainda não existirem)
+      if (colaboradores && colaboradores.length > 0) {
+        // Deletar snapshots antigos do mesmo lote (caso esteja re-enviando)
+        await supabase
+          .from("colaboradores_lote")
+          .delete()
+          .eq("lote_id", loteId);
+        
+        // Criar novos snapshots
+        const snapshots = colaboradores.map(c => ({
+          lote_id: loteId,
+          colaborador_id: c.id,
+          nome: c.nome,
+          cpf: c.cpf,
+          data_nascimento: c.data_nascimento,
+          sexo: c.sexo,
+          salario: c.salario || 0,
+          classificacao: c.classificacao,
+          classificacao_salario: c.classificacao_salario,
+          aposentado: c.aposentado || false,
+          afastado: c.afastado || false,
+          cid: c.cid,
+          status_seguradora: "pendente",
+          tipo_alteracao: "mantido"
+        }));
+        
+        const { error: snapshotError } = await supabase
+          .from("colaboradores_lote")
+          .insert(snapshots);
+        
+        if (snapshotError) throw snapshotError;
+      }
+      
+      // 4. Atualizar status do lote para aguardando_processamento
+      const { error: updateError } = await supabase
         .from("lotes_mensais")
         .update({ 
           status: "aguardando_processamento",
+          total_colaboradores: colaboradores?.length || 0,
           updated_at: new Date().toISOString()
         })
-        .eq("id", loteParaEnviar.id);
+        .eq("id", loteId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      toast.success("Lista enviada para processamento com sucesso!");
-      setIsConfirmEnvioOpen(false);
-      setLoteParaEnviar(null);
+      toast.success(`Lista de ${obra.nome} enviada para processamento!`);
+      setIsEnvioDialogOpen(false);
       
       // Atualizar dados
       queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
       queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
+      queryClient.invalidateQueries({ queryKey: ["obras-empresa-com-colaboradores"] });
     } catch (error: any) {
       console.error("Erro ao enviar lista:", error);
       toast.error(error?.message || "Erro ao enviar lista. Tente novamente.");
@@ -606,9 +682,14 @@ const ClienteDashboard = () => {
                           <Button 
                             size="sm" 
                             className="gap-1"
-                            onClick={() => handleSelecionarLote(obra.lote)}
+                            onClick={() => handleSelecionarObra(obra)}
+                            disabled={enviando}
                           >
-                            <Send className="h-3 w-3" />
+                            {enviando ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
                             Enviar
                           </Button>
                         ) : (
@@ -648,56 +729,6 @@ const ClienteDashboard = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEnvioDialogOpen(false)}>
               Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Confirmação de Envio */}
-      <Dialog open={isConfirmEnvioOpen} onOpenChange={setIsConfirmEnvioOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar Envio da Lista</DialogTitle>
-            <DialogDescription>
-              Você está prestes a enviar a lista de {competenciaAtualCapitalized} para processamento.
-              {loteParaEnviar?.obras?.nome && ` (${loteParaEnviar.obras.nome})`}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total de colaboradores:</span>
-                <span className="font-semibold">{loteParaEnviar?.total_colaboradores || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Competência:</span>
-                <span className="font-semibold">{competenciaAtualCapitalized}</span>
-              </div>
-            </div>
-            
-            <p className="text-sm text-muted-foreground mt-4">
-              Após o envio, a lista será analisada pela equipe administrativa. 
-              Você receberá notificações sobre o andamento do processo.
-            </p>
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsConfirmEnvioOpen(false)} disabled={enviando}>
-              Cancelar
-            </Button>
-            <Button onClick={handleConfirmarEnvio} disabled={enviando}>
-              {enviando ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Confirmar Envio
-                </>
-              )}
             </Button>
           </DialogFooter>
         </DialogContent>
