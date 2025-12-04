@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { 
   Upload, 
   Users, 
@@ -12,15 +13,41 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
+import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
+import { toast } from "sonner";
 
 const ClienteDashboard = () => {
   const { profile, loading: profileLoading } = useUserRole();
   const empresaId = profile?.empresa_id;
+  const queryClient = useQueryClient();
+
+  // Estados para o dialog de importação
+  const [isSelectObraOpen, setIsSelectObraOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [selectedObraId, setSelectedObraId] = useState<string | null>(null);
+  const [loteIdParaImportacao, setLoteIdParaImportacao] = useState<string | null>(null);
+
+  const { criarOuBuscarLote } = useImportarColaboradores();
 
   // Competência atual (mês/ano)
   const now = new Date();
@@ -28,6 +55,23 @@ const ClienteDashboard = () => {
   const competenciaAtual = format(now, "MMMM/yyyy", { locale: ptBR });
   const competenciaAtualCapitalized = competenciaAtual.charAt(0).toUpperCase() + competenciaAtual.slice(1);
   const isJanelaAberta = currentDay <= 20;
+
+  // Buscar obras da empresa
+  const { data: obras } = useQuery({
+    queryKey: ["obras", empresaId],
+    queryFn: async () => {
+      if (!empresaId) return [];
+      const { data, error } = await supabase
+        .from("obras")
+        .select("id, nome")
+        .eq("empresa_id", empresaId)
+        .eq("status", "ativa")
+        .order("nome");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!empresaId,
+  });
 
   // Buscar dados da empresa
   const { data: empresa } = useQuery({
@@ -44,6 +88,47 @@ const ClienteDashboard = () => {
     },
     enabled: !!empresaId,
   });
+
+  // Handler para abrir seleção de obra
+  const handleEnviarLista = () => {
+    if (!obras || obras.length === 0) {
+      toast.error("Você precisa cadastrar pelo menos uma obra antes de enviar a lista");
+      return;
+    }
+    
+    if (obras.length === 1) {
+      // Se só tem uma obra, usa ela diretamente
+      handleConfirmObra(obras[0].id);
+    } else {
+      // Se tem múltiplas obras, abre o dialog de seleção
+      setIsSelectObraOpen(true);
+    }
+  };
+
+  // Handler para confirmar obra e abrir importação
+  const handleConfirmObra = async (obraId: string) => {
+    if (!empresaId) return;
+    
+    try {
+      const loteId = await criarOuBuscarLote(empresaId, obraId, competenciaAtualCapitalized);
+      if (loteId) {
+        setSelectedObraId(obraId);
+        setLoteIdParaImportacao(loteId);
+        setIsSelectObraOpen(false);
+        setIsImportDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("Erro ao criar/buscar lote:", error);
+      toast.error("Erro ao preparar importação");
+    }
+  };
+
+  // Handler de sucesso da importação
+  const handleImportSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ["lote-atual"] });
+    queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
+    queryClient.invalidateQueries({ queryKey: ["total-colaboradores"] });
+  };
 
   // Buscar lote do mês atual
   const { data: loteAtual, isLoading: loteLoading } = useQuery({
@@ -212,7 +297,7 @@ const ClienteDashboard = () => {
                 <Calendar className="h-4 w-4" />
                 <span>Dias restantes: {20 - currentDay}</span>
               </div>
-              <Button size="lg" className="gap-2">
+              <Button size="lg" className="gap-2" onClick={handleEnviarLista}>
                 <Upload className="h-4 w-4" />
                 Enviar Lista de {competenciaAtualCapitalized.split("/")[0]}
                 <ArrowRight className="h-4 w-4" />
@@ -237,7 +322,7 @@ const ClienteDashboard = () => {
                 <Clock className="h-4 w-4" />
                 <span>Entre em contato com o suporte para regularizar</span>
               </div>
-              <Button size="lg" variant="outline" className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10">
+              <Button size="lg" variant="outline" className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10" onClick={handleEnviarLista}>
                 <Upload className="h-4 w-4" />
                 Enviar Lista (Atrasado)
               </Button>
@@ -331,6 +416,43 @@ const ClienteDashboard = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de Seleção de Obra */}
+      <Dialog open={isSelectObraOpen} onOpenChange={setIsSelectObraOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecione a Obra</DialogTitle>
+            <DialogDescription>
+              Escolha a obra para a qual deseja enviar a lista de {competenciaAtualCapitalized}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {obras?.map((obra) => (
+              <Button
+                key={obra.id}
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => handleConfirmObra(obra.id)}
+              >
+                {obra.nome}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Importação */}
+      {loteIdParaImportacao && empresaId && selectedObraId && (
+        <ImportarColaboradoresDialog
+          open={isImportDialogOpen}
+          onOpenChange={setIsImportDialogOpen}
+          empresaId={empresaId}
+          obraId={selectedObraId}
+          loteId={loteIdParaImportacao}
+          competencia={competenciaAtualCapitalized}
+          onSuccess={handleImportSuccess}
+        />
+      )}
     </div>
   );
 };
