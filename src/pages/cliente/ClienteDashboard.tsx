@@ -105,9 +105,17 @@ const ClienteDashboard = () => {
     }
   };
 
+  // Estado de loading para seleção de obra
+  const [preparingImport, setPreparingImport] = useState(false);
+
   // Handler para confirmar obra e abrir importação
   const handleConfirmObra = async (obraId: string) => {
-    if (!empresaId) return;
+    if (!empresaId) {
+      toast.error("Empresa não identificada");
+      return;
+    }
+    
+    setPreparingImport(true);
     
     try {
       const loteId = await criarOuBuscarLote(empresaId, obraId, competenciaAtualCapitalized);
@@ -116,10 +124,14 @@ const ClienteDashboard = () => {
         setLoteIdParaImportacao(loteId);
         setIsSelectObraOpen(false);
         setIsImportDialogOpen(true);
+      } else {
+        toast.error("Não foi possível criar o lote. Tente novamente.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao criar/buscar lote:", error);
-      toast.error("Erro ao preparar importação");
+      toast.error(error?.message || "Erro ao preparar importação. Verifique suas permissões.");
+    } finally {
+      setPreparingImport(false);
     }
   };
 
@@ -433,8 +445,16 @@ const ClienteDashboard = () => {
                 variant="outline"
                 className="w-full justify-start"
                 onClick={() => handleConfirmObra(obra.id)}
+                disabled={preparingImport}
               >
-                {obra.nome}
+                {preparingImport ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Preparando...
+                  </>
+                ) : (
+                  obra.nome
+                )}
               </Button>
             ))}
           </div>
