@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, FileWarning, RefreshCw, UserMinus } from "lucide-react";
+import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, FileWarning, UserMinus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCPF, formatCPF } from "@/lib/validators";
 import { toast } from "sonner";
@@ -130,7 +130,7 @@ export function ImportarColaboradoresDialog({
   const [desligamentosPrevistos, setDesligamentosPrevistos] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { importing, saveImportedColaboradores, repetirMesAnterior, criarOuBuscarLote } = useImportarColaboradores();
+  const { importing, atualizarColaboradores } = useImportarColaboradores();
 
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -374,14 +374,8 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
-      // Criar ou buscar lote apenas na confirmação
-      const loteId = await criarOuBuscarLote(empresaId, obraId, competencia);
-      if (!loteId) {
-        toast.error("Erro ao criar lote para importação");
-        return;
-      }
-
-      const result = await saveImportedColaboradores(
+      // Apenas atualiza a tabela de colaboradores (SEM criar lote)
+      const result = await atualizarColaboradores(
         colaboradoresValidos.map(r => ({
           nome: r.nome,
           sexo: r.sexo,
@@ -391,8 +385,7 @@ export function ImportarColaboradoresDialog({
           classificacao_salario: calcularClassificacaoSalario(r.salario),
         })),
         empresaId,
-        obraId,
-        loteId
+        obraId
       );
 
       if (result) {
@@ -410,28 +403,6 @@ export function ImportarColaboradoresDialog({
     } catch (error) {
       console.error("Erro ao importar:", error);
       toast.error("Erro ao importar colaboradores");
-    }
-  };
-
-  const handleRepetirMesAnterior = async () => {
-    try {
-      // Criar ou buscar lote apenas na confirmação
-      const loteId = await criarOuBuscarLote(empresaId, obraId, competencia);
-      if (!loteId) {
-        toast.error("Erro ao criar lote para importação");
-        return;
-      }
-
-      const result = await repetirMesAnterior(empresaId, obraId, loteId);
-      
-      if (result) {
-        toast.success(`Lista repetida com sucesso: ${result.snapshotCriados} colaboradores copiados do mês anterior`);
-        onSuccess();
-        onOpenChange(false);
-      }
-    } catch (error) {
-      console.error("Erro ao repetir mês anterior:", error);
-      toast.error("Erro ao repetir mês anterior");
     }
   };
 
@@ -480,15 +451,6 @@ export function ImportarColaboradoresDialog({
             <Button onClick={() => fileInputRef.current?.click()} disabled={processing || importing}>
               <Upload className="h-4 w-4 mr-2" />
               {processing ? "Processando..." : "Selecionar Arquivo"}
-            </Button>
-            
-            <Button 
-              onClick={handleRepetirMesAnterior} 
-              variant="secondary"
-              disabled={importing || validatedRows.length > 0}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {importing ? "Processando..." : "Repetir Mês Anterior"}
             </Button>
             
             <input
