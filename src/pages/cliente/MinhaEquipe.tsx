@@ -6,7 +6,8 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  Upload
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,18 +38,32 @@ import {
 } from "@/components/ui/dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
+import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
 
 const ITEMS_PER_PAGE = 10;
 
 const MinhaEquipe = () => {
   const { profile, loading: profileLoading } = useUserRole();
   const empresaId = profile?.empresa_id;
+  const queryClient = useQueryClient();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedObra, setSelectedObra] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [loteIdParaImportacao, setLoteIdParaImportacao] = useState<string | null>(null);
+
+  const { criarOuBuscarLote } = useImportarColaboradores();
+
+  // Competência atual
+  const now = new Date();
+  const competenciaAtual = format(now, "MMMM/yyyy", { locale: ptBR });
+  const competenciaAtualCapitalized = competenciaAtual.charAt(0).toUpperCase() + competenciaAtual.slice(1);
 
   // Buscar obras da empresa
   const { data: obras, isLoading: obrasLoading } = useQuery({
@@ -154,6 +169,25 @@ const MinhaEquipe = () => {
     return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Desligado</Badge>;
   };
 
+  const handleOpenImport = async () => {
+    if (!empresaId || selectedObra === "all") return;
+    
+    try {
+      const loteId = await criarOuBuscarLote(empresaId, selectedObra, competenciaAtualCapitalized);
+      if (loteId) {
+        setLoteIdParaImportacao(loteId);
+        setIsImportDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("Erro ao criar/buscar lote:", error);
+    }
+  };
+
+  const handleImportSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    queryClient.invalidateQueries({ queryKey: ["colaboradores-stats"] });
+  };
+
   if (profileLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -174,25 +208,38 @@ const MinhaEquipe = () => {
           </div>
         </div>
         
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Novo Colaborador
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Adicionar Novo Colaborador</DialogTitle>
-              <DialogDescription>
-                Preencha os dados do colaborador para adicioná-lo à equipe.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-6 text-center text-muted-foreground">
-              Formulário em desenvolvimento...
-            </div>
-          </DialogContent>
-        </Dialog>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleOpenImport} 
+            variant="outline" 
+            className="gap-2"
+            disabled={selectedObra === "all"}
+            title={selectedObra === "all" ? "Selecione uma obra para importar" : ""}
+          >
+            <Upload className="h-4 w-4" />
+            Importar Lista
+          </Button>
+          
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Novo Colaborador
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Adicionar Novo Colaborador</DialogTitle>
+                <DialogDescription>
+                  Preencha os dados do colaborador para adicioná-lo à equipe.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-6 text-center text-muted-foreground">
+                Formulário em desenvolvimento...
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Resumo */}
@@ -350,6 +397,19 @@ const MinhaEquipe = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de Importação */}
+      {loteIdParaImportacao && empresaId && selectedObra !== "all" && (
+        <ImportarColaboradoresDialog
+          open={isImportDialogOpen}
+          onOpenChange={setIsImportDialogOpen}
+          empresaId={empresaId}
+          obraId={selectedObra}
+          loteId={loteIdParaImportacao}
+          competencia={competenciaAtualCapitalized}
+          onSuccess={handleImportSuccess}
+        />
+      )}
     </div>
   );
 };

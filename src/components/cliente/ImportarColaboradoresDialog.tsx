@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, FileWarning } from "lucide-react";
+import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, FileWarning, RefreshCw, UserMinus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCPF, formatCPF } from "@/lib/validators";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
+import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
 
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.20 },
@@ -41,6 +42,8 @@ interface ImportarColaboradoresDialogProps {
   onOpenChange: (open: boolean) => void;
   empresaId: string;
   obraId: string;
+  loteId: string;
+  competencia: string;
   onSuccess: () => void;
 }
 
@@ -114,12 +117,22 @@ const normalizarData = (valor: any): string | null => {
   return null;
 };
 
-export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obraId, onSuccess }: ImportarColaboradoresDialogProps) {
+export function ImportarColaboradoresDialog({ 
+  open, 
+  onOpenChange, 
+  empresaId, 
+  obraId, 
+  loteId,
+  competencia,
+  onSuccess 
+}: ImportarColaboradoresDialogProps) {
   const [validatedRows, setValidatedRows] = useState<ValidatedRow[]>([]);
   const [processing, setProcessing] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "novo" | "atualizado" | "erro">("todos");
+  const [desligamentosPrevistos, setDesligamentosPrevistos] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { importing, saveImportedColaboradores, repetirMesAnterior } = useImportarColaboradores();
 
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -297,6 +310,11 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
       }
 
       setValidatedRows(validated);
+      
+      // Calcular desligamentos previstos (quem está ativo mas NÃO está na lista)
+      const cpfsValidados = new Set(validated.filter(v => v.status !== "erro").map(v => v.cpf));
+      const desligamentos = (existentes || []).filter(e => !cpfsValidados.has(e.cpf)).length;
+      setDesligamentosPrevistos(desligamentos);
     } catch (error) {
       console.error("Erro ao processar arquivo:", error);
       toast.error("Erro ao processar arquivo");
@@ -313,57 +331,58 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
   };
 
   const confirmarImportacao = async () => {
-    setImporting(true);
     try {
       const colaboradoresValidos = validatedRows.filter(r => r.status !== "erro");
       
-      // Primeiro: Excluir todos os colaboradores atuais da empresa
-      const { error: deleteError } = await supabase
-        .from("colaboradores")
-        .delete()
-        .eq("empresa_id", empresaId)
-        .eq("obra_id", obraId)
-        .eq("status", "ativo");
-
-      if (deleteError) throw deleteError;
-
-      // Segundo: Inserir todos os colaboradores da planilha como novos
-      if (colaboradoresValidos.length > 0) {
-        const { error: insertError } = await supabase
-          .from("colaboradores")
-          .insert(
-            colaboradoresValidos.map(r => ({
-              nome: r.nome,
-              sexo: r.sexo,
-              cpf: r.cpf,
-              data_nascimento: r.data_nascimento,
-              salario: r.salario,
-              classificacao_salario: calcularClassificacaoSalario(r.salario),
-              classificacao: "CLT",
-              aposentado: false,
-              afastado: false,
-              empresa_id: empresaId,
-              obra_id: obraId,
-            }))
-          );
-
-        if (insertError) throw insertError;
+      if (colaboradoresValidos.length === 0) {
+        toast.error("Nenhum colaborador válido para importar");
+        return;
       }
 
-      const erros = validatedRows.filter(r => r.status === "erro").length;
-      toast.success(
-        `Lista substituída com sucesso: ${colaboradoresValidos.length} colaboradores importados${erros > 0 ? `, ${erros} erros ignorados` : ""}`
+      const result = await saveImportedColaboradores(
+        colaboradoresValidos.map(r => ({
+          nome: r.nome,
+          sexo: r.sexo,
+          cpf: r.cpf,
+          data_nascimento: r.data_nascimento,
+          salario: r.salario,
+          classificacao_salario: calcularClassificacaoSalario(r.salario),
+        })),
+        empresaId,
+        obraId,
+        loteId
       );
-      
-      setValidatedRows([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      onSuccess();
-      onOpenChange(false);
+
+      if (result) {
+        const erros = validatedRows.filter(r => r.status === "erro").length;
+        toast.success(
+          `Importação concluída: ${result.novos} novos, ${result.atualizados} atualizados, ${result.desligados} desligados${erros > 0 ? `, ${erros} erros ignorados` : ""}`
+        );
+        
+        setValidatedRows([]);
+        setDesligamentosPrevistos(0);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        onSuccess();
+        onOpenChange(false);
+      }
     } catch (error) {
       console.error("Erro ao importar:", error);
       toast.error("Erro ao importar colaboradores");
-    } finally {
-      setImporting(false);
+    }
+  };
+
+  const handleRepetirMesAnterior = async () => {
+    try {
+      const result = await repetirMesAnterior(empresaId, obraId, loteId);
+      
+      if (result) {
+        toast.success(`Lista repetida com sucesso: ${result.snapshotCriados} colaboradores copiados do mês anterior`);
+        onSuccess();
+        onOpenChange(false);
+      }
+    } catch (error) {
+      console.error("Erro ao repetir mês anterior:", error);
+      toast.error("Erro ao repetir mês anterior");
     }
   };
 
@@ -395,22 +414,32 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Importar Colaboradores</DialogTitle>
+          <DialogTitle>Importar Lista de {competencia}</DialogTitle>
           <DialogDescription>
-            Faça o upload de um arquivo .xlsx com os dados dos colaboradores. A importação substituirá toda a lista atual.
+            Faça o upload de um arquivo .xlsx com a lista completa de colaboradores. 
+            Esta lista é a <strong>verdade absoluta</strong> para este mês: colaboradores ausentes serão marcados como desligados.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <Button onClick={baixarModelo} variant="outline">
               <Download className="h-4 w-4 mr-2" />
               Baixar Modelo (.xlsx)
             </Button>
             
-            <Button onClick={() => fileInputRef.current?.click()} disabled={processing}>
+            <Button onClick={() => fileInputRef.current?.click()} disabled={processing || importing}>
               <Upload className="h-4 w-4 mr-2" />
               {processing ? "Processando..." : "Selecionar Arquivo"}
+            </Button>
+            
+            <Button 
+              onClick={handleRepetirMesAnterior} 
+              variant="secondary"
+              disabled={importing || validatedRows.length > 0}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {importing ? "Processando..." : "Repetir Mês Anterior"}
             </Button>
             
             <input
@@ -424,7 +453,7 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
 
           {validatedRows.length > 0 && (
             <>
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-5">
                 <Alert 
                   className={`cursor-pointer transition-all ${filtroStatus === "todos" ? "border-foreground ring-2 ring-foreground" : "border-muted hover:border-foreground"}`}
                   onClick={() => setFiltroStatus("todos")}
@@ -464,7 +493,25 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
                     <strong>{erros.length}</strong> erros
                   </AlertDescription>
                 </Alert>
+
+                {desligamentosPrevistos > 0 && (
+                  <Alert className="border-orange-500/50 bg-orange-500/5">
+                    <UserMinus className="h-4 w-4 text-orange-600" />
+                    <AlertDescription>
+                      <strong>{desligamentosPrevistos}</strong> desligamentos
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
+
+              {desligamentosPrevistos > 0 && (
+                <Alert className="border-orange-500/30 bg-orange-500/5">
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-orange-700">
+                    <strong>{desligamentosPrevistos} colaborador(es)</strong> ativo(s) não estão na lista e serão marcados como <strong>desligados</strong> ao confirmar a importação.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <div className="rounded-lg border max-h-96 overflow-y-auto">
                 <Table>
@@ -540,7 +587,7 @@ export function ImportarColaboradoresDialog({ open, onOpenChange, empresaId, obr
             onClick={confirmarImportacao}
             disabled={validatedRows.length === 0 || (novos.length === 0 && atualizados.length === 0) || importing}
           >
-            {importing ? "Importando..." : `Confirmar Importação (${novos.length + atualizados.length})`}
+            {importing ? "Importando..." : `Confirmar Importação (${novos.length + atualizados.length} ativos${desligamentosPrevistos > 0 ? `, ${desligamentosPrevistos} deslig.` : ""})`}
           </Button>
         </DialogFooter>
       </DialogContent>
