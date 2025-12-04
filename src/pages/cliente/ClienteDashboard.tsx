@@ -32,6 +32,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { CorrigirPendenciasDialog } from "@/components/cliente/CorrigirPendenciasDialog";
 
 const ClienteDashboard = () => {
   const { profile, loading: profileLoading } = useUserRole();
@@ -42,6 +43,11 @@ const ClienteDashboard = () => {
   // Estados
   const [isEnvioDialogOpen, setIsEnvioDialogOpen] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [pendenciaDialog, setPendenciaDialog] = useState<{
+    open: boolean;
+    loteId: string;
+    obraNome: string;
+  }>({ open: false, loteId: "", obraNome: "" });
 
   // Competência atual (mês/ano)
   const now = new Date();
@@ -382,47 +388,66 @@ const ClienteDashboard = () => {
               </p>
             ) : (
               <div className="space-y-3">
-                {obrasComStatus.map((obra) => (
-                  <div 
-                    key={obra.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${
-                      obra.jaEnviado 
-                        ? "border-blue-500/30 bg-blue-500/5"
-                        : obra.temLista
-                          ? "border-green-500/30 bg-green-500/5"
-                          : "border-orange-500/30 bg-orange-500/5"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Building2 className={`h-5 w-5 ${
-                        obra.jaEnviado 
-                          ? "text-blue-600"
-                          : obra.temLista
-                            ? "text-green-600"
-                            : "text-orange-600"
-                      }`} />
+                {obrasComStatus.map((obra) => {
+                  const temPendencia = obra.status === "com_pendencia";
+                  return (
+                    <div 
+                      key={obra.id}
+                      onClick={() => {
+                        if (temPendencia && obra.lote?.id) {
+                          setPendenciaDialog({
+                            open: true,
+                            loteId: obra.lote.id,
+                            obraNome: obra.nome,
+                          });
+                        }
+                      }}
+                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                        temPendencia 
+                          ? "border-red-500/30 bg-red-500/5 cursor-pointer hover:bg-red-500/10"
+                          : obra.jaEnviado 
+                            ? "border-blue-500/30 bg-blue-500/5"
+                            : obra.temLista
+                              ? "border-green-500/30 bg-green-500/5"
+                              : "border-orange-500/30 bg-orange-500/5"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Building2 className={`h-5 w-5 ${
+                          temPendencia
+                            ? "text-red-600"
+                            : obra.jaEnviado 
+                              ? "text-blue-600"
+                              : obra.temLista
+                                ? "text-green-600"
+                                : "text-orange-600"
+                        }`} />
+                        <div>
+                          <p className="font-medium">{obra.nome}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {obra.totalVidas} vidas
+                            {temPendencia && (
+                              <span className="text-red-600 ml-2">• Clique para corrigir</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                       <div>
-                        <p className="font-medium">{obra.nome}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {obra.totalVidas} vidas
-                        </p>
+                        {obra.jaEnviado ? (
+                          getStatusBadge(obra.status!)
+                        ) : obra.temLista ? (
+                          <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                            Pronto para enviar
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20">
+                            Sem lista
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <div>
-                      {obra.jaEnviado ? (
-                        getStatusBadge(obra.status!)
-                      ) : obra.temLista ? (
-                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                          Pronto para enviar
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20">
-                          Sem lista
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -658,6 +683,15 @@ const ClienteDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog de Pendências */}
+      <CorrigirPendenciasDialog
+        open={pendenciaDialog.open}
+        onOpenChange={(open) => setPendenciaDialog({ ...pendenciaDialog, open })}
+        loteId={pendenciaDialog.loteId}
+        obraNome={pendenciaDialog.obraNome}
+        competencia={competenciaAtualCapitalized}
+      />
     </div>
   );
 };
