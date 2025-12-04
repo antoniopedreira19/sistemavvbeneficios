@@ -124,7 +124,20 @@ export function LotesTable({
           {lotes.map((lote) => (
             <TableRow key={lote.id}>
               <TableCell className="font-medium">
-                {lote.empresa?.nome || "-"}
+                <div className="flex flex-col gap-1">
+                  <span>{lote.empresa?.nome || "-"}</span>
+                  {lote.status === "aguardando_processamento" && (
+                    (lote.total_reprovados ?? 0) > 0 ? (
+                      <Badge variant="outline" className="w-fit text-xs bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700">
+                        ⚠️ Correção Enviada
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="w-fit text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700">
+                        🆕 Novo Envio
+                      </Badge>
+                    )
+                  )}
+                </div>
               </TableCell>
               <TableCell>{lote.obra?.nome || "Sem obra"}</TableCell>
               <TableCell>
