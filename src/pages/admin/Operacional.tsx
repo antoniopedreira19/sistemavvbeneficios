@@ -31,7 +31,7 @@ const Operacional = () => {
     com_pendencia: 1,
     concluido: 1,
   });
-  
+
   // Dialogs state
   const [confirmEnviarDialog, setConfirmEnviarDialog] = useState<LoteOperacional | null>(null);
   const [confirmFaturarDialog, setConfirmFaturarDialog] = useState<LoteOperacional | null>(null);
@@ -42,7 +42,8 @@ const Operacional = () => {
   const fetchLotes = async (status: LoteStatus) => {
     const { data, error, count } = await supabase
       .from("lotes_mensais")
-      .select(`
+      .select(
+        `
         id,
         competencia,
         total_colaboradores,
@@ -52,13 +53,12 @@ const Operacional = () => {
         status,
         empresa:empresas(nome),
         obra:obras(nome)
-      `, { count: "exact" })
+      `,
+        { count: "exact" },
+      )
       .eq("status", status)
       .order("created_at", { ascending: false })
-      .range(
-        (pages[status] - 1) * ITEMS_PER_PAGE,
-        pages[status] * ITEMS_PER_PAGE - 1
-      );
+      .range((pages[status] - 1) * ITEMS_PER_PAGE, pages[status] * ITEMS_PER_PAGE - 1);
 
     if (error) throw error;
     return { data: data as LoteOperacional[], count: count || 0 };
@@ -89,21 +89,16 @@ const Operacional = () => {
   const enviarParaSeguradoraMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
-      
-      // Update colaboradores_lote status to 'enviado'
-      const { error: colabError } = await supabase
-        .from("colaboradores_lote")
-        .update({ status_seguradora: "enviado" })
-        .eq("lote_id", loteId);
-      
-      if (colabError) throw colabError;
+
+      // CORREÇÃO: Removido o update em colaboradores_lote que causava erro.
+      // Os colaboradores permanecem como 'pendente' até o retorno da seguradora.
 
       // Update lote status
       const { error } = await supabase
         .from("lotes_mensais")
-        .update({ 
+        .update({
           status: "em_analise_seguradora",
-          enviado_seguradora_em: new Date().toISOString()
+          enviado_seguradora_em: new Date().toISOString(),
         })
         .eq("id", loteId);
 
@@ -115,9 +110,9 @@ const Operacional = () => {
       setConfirmEnviarDialog(null);
       setActionLoading(null);
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error(error);
-      toast.error("Erro ao enviar para seguradora");
+      toast.error(`Erro ao enviar: ${error.message || "Erro desconhecido"}`);
       setActionLoading(null);
     },
   });
@@ -125,10 +120,7 @@ const Operacional = () => {
   const liberarFaturamentoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
-      const { error } = await supabase
-        .from("lotes_mensais")
-        .update({ status: "faturado" })
-        .eq("id", loteId);
+      const { error } = await supabase.from("lotes_mensais").update({ status: "faturado" }).eq("id", loteId);
 
       if (error) throw error;
     },
@@ -150,7 +142,7 @@ const Operacional = () => {
       setActionLoading(lote.id);
       // Por enquanto apenas simula o envio
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      // TODO: Implementar envio de email de cobrança
+      // TODO: Implementar envio de email de cobrança real
     },
     onSuccess: () => {
       toast.success("Email de cobrança enviado!");
@@ -191,9 +183,7 @@ const Operacional = () => {
         <Briefcase className="h-8 w-8 text-primary" />
         <div>
           <h1 className="text-2xl font-bold">Operacional</h1>
-          <p className="text-muted-foreground">
-            Dashboard de operações - Gestão de lotes mensais
-          </p>
+          <p className="text-muted-foreground">Dashboard de operações - Gestão de lotes mensais</p>
         </div>
       </div>
 
@@ -312,8 +302,8 @@ const Operacional = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Enviar para Seguradora?</AlertDialogTitle>
             <AlertDialogDescription>
-              O lote de <strong>{confirmEnviarDialog?.empresa?.nome}</strong> ({confirmEnviarDialog?.competencia}) 
-              com {confirmEnviarDialog?.total_colaboradores} colaboradores será enviado para análise da seguradora.
+              O lote de <strong>{confirmEnviarDialog?.empresa?.nome}</strong> ({confirmEnviarDialog?.competencia}) com{" "}
+              {confirmEnviarDialog?.total_colaboradores} colaboradores será enviado para análise da seguradora.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -333,7 +323,7 @@ const Operacional = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Liberar para Faturamento?</AlertDialogTitle>
             <AlertDialogDescription>
-              O lote de <strong>{confirmFaturarDialog?.empresa?.nome}</strong> ({confirmFaturarDialog?.competencia}) 
+              O lote de <strong>{confirmFaturarDialog?.empresa?.nome}</strong> ({confirmFaturarDialog?.competencia})
               será liberado para o setor financeiro emitir a nota fiscal.
             </AlertDialogDescription>
           </AlertDialogHeader>
