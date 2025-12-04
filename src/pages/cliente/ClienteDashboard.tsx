@@ -9,11 +9,14 @@ import {
   ArrowRight,
   Calendar,
   Loader2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Building2,
+  AlertCircle
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +40,7 @@ const ClienteDashboard = () => {
   const navigate = useNavigate();
 
   // Estados
+  const [isEnvioDialogOpen, setIsEnvioDialogOpen] = useState(false);
   const [isConfirmEnvioOpen, setIsConfirmEnvioOpen] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [loteParaEnviar, setLoteParaEnviar] = useState<any>(null);
@@ -114,6 +118,23 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
+  // Buscar todas as obras da empresa
+  const { data: obras } = useQuery({
+    queryKey: ["obras-empresa", empresaId],
+    queryFn: async () => {
+      if (!empresaId) return [];
+      const { data, error } = await supabase
+        .from("obras")
+        .select("id, nome, status")
+        .eq("empresa_id", empresaId)
+        .eq("status", "ativa")
+        .order("nome");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!empresaId,
+  });
+
   // Buscar última nota fiscal
   const { data: ultimaFatura } = useQuery({
     queryKey: ["ultima-fatura", empresaId],
@@ -150,18 +171,32 @@ const ClienteDashboard = () => {
   // Lote principal para exibição de status
   const loteAtual = loteEmAndamento || lotesAtuais?.[0];
 
-  // Handler para abrir confirmação de envio
+  // Mapear obras com seus lotes do mês atual
+  const obrasComStatus = obras?.map(obra => {
+    const lote = lotesAtuais?.find(l => l.obra_id === obra.id);
+    return {
+      ...obra,
+      lote,
+      totalVidas: lote?.total_colaboradores || 0,
+      status: lote?.status || null,
+      temLista: lote && (lote.total_colaboradores || 0) > 0,
+      jaEnviado: lote && lote.status !== "rascunho"
+    };
+  }) || [];
+
+  // Verificar se há alguma obra pronta para enviar
+  const obrasParaEnviar = obrasComStatus.filter(o => o.temLista && !o.jaEnviado);
+  const obrasSemLista = obrasComStatus.filter(o => !o.temLista && !o.jaEnviado);
+
+  // Handler para abrir dialog de envio
   const handleEnviarLista = () => {
-    if (!loteRascunhoComColaboradores) {
-      toast.info(
-        "Você precisa importar a lista de colaboradores primeiro. Vá para 'Minha Equipe'.",
-        { duration: 5000 }
-      );
-      navigate("/cliente/minha-equipe");
-      return;
-    }
-    
-    setLoteParaEnviar(loteRascunhoComColaboradores);
+    setIsEnvioDialogOpen(true);
+  };
+
+  // Handler para selecionar lote e abrir confirmação
+  const handleSelecionarLote = (lote: any) => {
+    setLoteParaEnviar(lote);
+    setIsEnvioDialogOpen(false);
     setIsConfirmEnvioOpen(true);
   };
 
@@ -332,10 +367,10 @@ const ClienteDashboard = () => {
               <Button 
                 size="lg" 
                 className="gap-2" 
-                onClick={() => navigate("/cliente/minha-equipe")}
+                onClick={handleEnviarLista}
               >
-                <FileSpreadsheet className="h-4 w-4" />
-                Importar Lista em Minha Equipe
+                <Send className="h-4 w-4" />
+                Enviar Lista do Mês
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -362,10 +397,10 @@ const ClienteDashboard = () => {
               <Button 
                 size="lg" 
                 className="gap-2" 
-                onClick={() => navigate("/cliente/minha-equipe")}
+                onClick={handleEnviarLista}
               >
-                <FileSpreadsheet className="h-4 w-4" />
-                Importar Lista em Minha Equipe
+                <Send className="h-4 w-4" />
+                Enviar Lista do Mês
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -491,6 +526,132 @@ const ClienteDashboard = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de Seleção de Obra para Envio */}
+      <Dialog open={isEnvioDialogOpen} onOpenChange={setIsEnvioDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" />
+              Enviar Lista do Mês
+            </DialogTitle>
+            <DialogDescription>
+              Competência: <span className="font-semibold text-foreground">{competenciaAtualCapitalized}</span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4 space-y-4">
+            {obrasComStatus.length === 0 ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Nenhuma obra cadastrada. Cadastre uma obra em "Minha Equipe" primeiro.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Selecione a obra para enviar a lista de colaboradores:
+                </p>
+                
+                <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                  {obrasComStatus.map((obra) => (
+                    <div 
+                      key={obra.id}
+                      className={`flex items-center justify-between p-4 rounded-lg border ${
+                        obra.temLista && !obra.jaEnviado 
+                          ? "border-green-500/30 bg-green-500/5" 
+                          : obra.jaEnviado 
+                            ? "border-blue-500/30 bg-blue-500/5"
+                            : "border-orange-500/30 bg-orange-500/5"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                          obra.temLista && !obra.jaEnviado 
+                            ? "bg-green-500/20" 
+                            : obra.jaEnviado 
+                              ? "bg-blue-500/20"
+                              : "bg-orange-500/20"
+                        }`}>
+                          <Building2 className={`h-5 w-5 ${
+                            obra.temLista && !obra.jaEnviado 
+                              ? "text-green-600" 
+                              : obra.jaEnviado 
+                                ? "text-blue-600"
+                                : "text-orange-600"
+                          }`} />
+                        </div>
+                        <div>
+                          <p className="font-medium">{obra.nome}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {obra.jaEnviado ? (
+                              <span className="text-blue-600">Já enviado</span>
+                            ) : obra.temLista ? (
+                              <span className="text-green-600">{obra.totalVidas} vidas importadas</span>
+                            ) : (
+                              <span className="text-orange-600 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                Lista não importada
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        {obra.jaEnviado ? (
+                          getStatusBadge(obra.status!)
+                        ) : obra.temLista ? (
+                          <Button 
+                            size="sm" 
+                            className="gap-1"
+                            onClick={() => handleSelecionarLote(obra.lote)}
+                          >
+                            <Send className="h-3 w-3" />
+                            Enviar
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            className="gap-1 text-orange-600 border-orange-500/50 hover:bg-orange-500/10"
+                            onClick={() => {
+                              setIsEnvioDialogOpen(false);
+                              navigate("/cliente/minha-equipe");
+                            }}
+                          >
+                            <FileSpreadsheet className="h-3 w-3" />
+                            Importar
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {obrasSemLista.length > 0 && (
+                  <Alert className="border-orange-500/30 bg-orange-500/5">
+                    <AlertTriangle className="h-4 w-4 text-orange-600" />
+                    <AlertDescription className="text-orange-700">
+                      {obrasSemLista.length === 1 
+                        ? `A obra "${obrasSemLista[0].nome}" ainda não possui lista importada.`
+                        : `${obrasSemLista.length} obras ainda não possuem lista importada.`
+                      }
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEnvioDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog de Confirmação de Envio */}
       <Dialog open={isConfirmEnvioOpen} onOpenChange={setIsConfirmEnvioOpen}>
