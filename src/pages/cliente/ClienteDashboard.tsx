@@ -46,6 +46,7 @@ const ClienteDashboard = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedObraId, setSelectedObraId] = useState<string | null>(null);
   const [loteIdParaImportacao, setLoteIdParaImportacao] = useState<string | null>(null);
+  const [preparingImport, setPreparingImport] = useState(false);
 
   const { criarOuBuscarLote } = useImportarColaboradores();
 
@@ -104,9 +105,6 @@ const ClienteDashboard = () => {
       setIsSelectObraOpen(true);
     }
   };
-
-  // Estado de loading para seleção de obra
-  const [preparingImport, setPreparingImport] = useState(false);
 
   // Handler para confirmar obra e abrir importação
   const handleConfirmObra = async (obraId: string) => {
