@@ -7,12 +7,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Upload
+  Upload,
+  Info
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -241,6 +243,15 @@ const MinhaEquipe = () => {
           </Dialog>
         </div>
       </div>
+
+      {/* Alerta informativo */}
+      <Alert className="bg-blue-500/5 border-blue-500/20">
+        <Info className="h-4 w-4 text-blue-600" />
+        <AlertDescription className="text-sm">
+          <strong>Como enviar a lista mensal:</strong> Selecione uma obra no filtro abaixo, clique em "Importar Lista" para carregar a planilha de colaboradores. 
+          Depois, vá ao <strong>Painel</strong> para enviar a lista para processamento.
+        </AlertDescription>
+      </Alert>
 
       {/* Resumo */}
       <div className="grid gap-4 md:grid-cols-3">
