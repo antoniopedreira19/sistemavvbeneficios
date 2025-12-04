@@ -132,13 +132,23 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
-  // Verificar se existe lote em rascunho com colaboradores
+  // Verificar se existe lote em rascunho com colaboradores (pronto para enviar)
   const loteRascunhoComColaboradores = lotesAtuais?.find(
     l => l.status === "rascunho" && (l.total_colaboradores || 0) > 0
   );
 
-  // Verificar lote principal (o mais recente ou o em andamento)
-  const loteAtual = lotesAtuais?.[0];
+  // Verificar se existe lote em rascunho vazio (precisa importar)
+  const loteRascunhoVazio = lotesAtuais?.find(
+    l => l.status === "rascunho" && (l.total_colaboradores || 0) === 0
+  );
+
+  // Verificar lote em andamento (não rascunho)
+  const loteEmAndamento = lotesAtuais?.find(
+    l => l.status !== "rascunho"
+  );
+
+  // Lote principal para exibição de status
+  const loteAtual = loteEmAndamento || lotesAtuais?.[0];
 
   // Handler para abrir confirmação de envio
   const handleEnviarLista = () => {
@@ -242,36 +252,6 @@ const ClienteDashboard = () => {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </CardContent>
         </Card>
-      ) : loteAtual && loteAtual.status !== "rascunho" ? (
-        // Lote já enviado (não é rascunho)
-        <Card className="border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-indigo-500/10">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-600" />
-              <CardTitle className="text-blue-700">Lista de {competenciaAtualCapitalized}</CardTitle>
-            </div>
-            <CardDescription>
-              Status atual do envio mensal
-              {loteAtual.obras?.nome && ` - ${loteAtual.obras.nome}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-3">
-                {getStatusBadge(loteAtual.status)}
-                <span className="text-sm text-muted-foreground">
-                  {loteAtual.total_colaboradores || 0} colaboradores
-                </span>
-              </div>
-              {loteAtual.status === "com_pendencia" && (
-                <Button size="lg" variant="destructive" className="gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Resolver Pendências
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       ) : loteRascunhoComColaboradores ? (
         // Lote em rascunho com colaboradores - pronto para enviar
         <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-orange-500/10">
@@ -301,8 +281,68 @@ const ClienteDashboard = () => {
             </div>
           </CardContent>
         </Card>
+      ) : loteEmAndamento ? (
+        // Lote já enviado (não é rascunho)
+        <Card className="border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-indigo-500/10">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-600" />
+              <CardTitle className="text-blue-700">Lista de {competenciaAtualCapitalized}</CardTitle>
+            </div>
+            <CardDescription>
+              Status atual do envio mensal
+              {loteEmAndamento.obras?.nome && ` - ${loteEmAndamento.obras.nome}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex items-center gap-3">
+                {getStatusBadge(loteEmAndamento.status)}
+                <span className="text-sm text-muted-foreground">
+                  {loteEmAndamento.total_colaboradores || 0} colaboradores
+                </span>
+              </div>
+              {loteEmAndamento.status === "com_pendencia" && (
+                <Button size="lg" variant="destructive" className="gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Resolver Pendências
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : loteRascunhoVazio && isJanelaAberta ? (
+        // Lote em rascunho vazio - precisa importar
+        <Card className="border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-amber-500/10">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-600" />
+              <CardTitle className="text-orange-700">Importação Pendente</CardTitle>
+            </div>
+            <CardDescription>
+              Você precisa importar a lista de colaboradores para {loteRascunhoVazio.obras?.nome || "esta obra"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="h-4 w-4" />
+                <span>Dias restantes: {20 - currentDay}</span>
+              </div>
+              <Button 
+                size="lg" 
+                className="gap-2" 
+                onClick={() => navigate("/cliente/minha-equipe")}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Importar Lista em Minha Equipe
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       ) : isJanelaAberta ? (
-        // Janela aberta, sem lote - precisa importar primeiro
+        // Janela aberta, sem nenhum lote - precisa começar
         <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-emerald-500/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -322,10 +362,10 @@ const ClienteDashboard = () => {
               <Button 
                 size="lg" 
                 className="gap-2" 
-                onClick={handleEnviarLista}
+                onClick={() => navigate("/cliente/minha-equipe")}
               >
-                <Send className="h-4 w-4" />
-                Enviar Lista do Mês
+                <FileSpreadsheet className="h-4 w-4" />
+                Importar Lista em Minha Equipe
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
