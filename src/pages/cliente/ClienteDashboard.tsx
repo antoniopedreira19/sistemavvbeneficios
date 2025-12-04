@@ -171,16 +171,6 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
-  // Verificar se existe lote em rascunho com colaboradores (pronto para enviar)
-  const loteRascunhoComColaboradores = lotesAtuais?.find(
-    l => l.status === "rascunho" && (l.total_colaboradores || 0) > 0
-  );
-
-  // Verificar se existe lote em rascunho vazio (precisa importar)
-  const loteRascunhoVazio = lotesAtuais?.find(
-    l => l.status === "rascunho" && (l.total_colaboradores || 0) === 0
-  );
-
   // Verificar lote em andamento (não rascunho)
   const loteEmAndamento = lotesAtuais?.find(
     l => l.status !== "rascunho"
@@ -197,15 +187,14 @@ const ClienteDashboard = () => {
     return {
       ...obra,
       lote,
-      totalVidas: obra.totalColaboradores || 0, // Colaboradores na tabela principal
+      totalVidas: obra.totalColaboradores || 0,
       status: lote?.status || null,
-      temLista: (obra.totalColaboradores || 0) > 0, // Tem colaboradores = pronto para enviar
+      temLista: (obra.totalColaboradores || 0) > 0,
       jaEnviado
     };
   }) || [];
 
-  // Verificar se há alguma obra pronta para enviar (tem colaboradores e não foi enviado ainda)
-  const obrasParaEnviar = obrasComStatus.filter(o => o.temLista && !o.jaEnviado);
+  // Verificar obras sem lista importada
   const obrasSemLista = obrasComStatus.filter(o => !o.temLista);
 
   // Handler para abrir dialog de envio
@@ -363,155 +352,68 @@ const ClienteDashboard = () => {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </CardContent>
         </Card>
-      ) : loteRascunhoComColaboradores ? (
-        // Lote em rascunho com colaboradores - pronto para enviar
-        <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-orange-500/10">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-amber-600" />
-              <CardTitle className="text-amber-700">Lista Pronta para Envio</CardTitle>
-            </div>
-            <CardDescription>
-              Você tem uma lista de {competenciaAtualCapitalized} aguardando envio
-              {loteRascunhoComColaboradores.obras?.nome && ` - ${loteRascunhoComColaboradores.obras.nome}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-3">
-                {getStatusBadge("rascunho")}
-                <span className="text-sm text-muted-foreground">
-                  {loteRascunhoComColaboradores.total_colaboradores || 0} colaboradores importados
-                </span>
-              </div>
-              <Button size="lg" className="gap-2 bg-amber-600 hover:bg-amber-700" onClick={handleEnviarLista}>
-                <Send className="h-4 w-4" />
-                Enviar para Processamento
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : loteEmAndamento ? (
-        // Lote já enviado (não é rascunho)
-        <Card className="border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-indigo-500/10">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-600" />
-              <CardTitle className="text-blue-700">Lista de {competenciaAtualCapitalized}</CardTitle>
-            </div>
-            <CardDescription>
-              Status atual do envio mensal
-              {loteEmAndamento.obras?.nome && ` - ${loteEmAndamento.obras.nome}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-3">
-                {getStatusBadge(loteEmAndamento.status)}
-                <span className="text-sm text-muted-foreground">
-                  {loteEmAndamento.total_colaboradores || 0} colaboradores
-                </span>
-              </div>
-              {loteEmAndamento.status === "com_pendencia" && (
-                <Button size="lg" variant="destructive" className="gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Resolver Pendências
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : loteRascunhoVazio && isJanelaAberta ? (
-        // Lote em rascunho vazio - precisa importar
-        <Card className="border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-amber-500/10">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-600" />
-              <CardTitle className="text-orange-700">Importação Pendente</CardTitle>
-            </div>
-            <CardDescription>
-              Você precisa importar a lista de colaboradores para {loteRascunhoVazio.obras?.nome || "esta obra"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Calendar className="h-4 w-4" />
-                <span>Dias restantes: {20 - currentDay}</span>
-              </div>
-              <Button 
-                size="lg" 
-                className="gap-2" 
-                onClick={handleEnviarLista}
-              >
-                <Send className="h-4 w-4" />
-                Enviar Lista do Mês
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : isJanelaAberta ? (
-        // Janela aberta, sem nenhum lote - precisa começar
-        <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-emerald-500/10">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              <CardTitle className="text-green-700">Janela de Movimentação Aberta</CardTitle>
-            </div>
-            <CardDescription>
-              Você tem até o dia 20 para enviar a lista de {competenciaAtualCapitalized}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Calendar className="h-4 w-4" />
-                <span>Dias restantes: {20 - currentDay}</span>
-              </div>
-              <Button 
-                size="lg" 
-                className="gap-2" 
-                onClick={handleEnviarLista}
-              >
-                <Send className="h-4 w-4" />
-                Enviar Lista do Mês
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       ) : (
-        // Janela fechada
-        <Card className="border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-orange-500/10">
+        <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              <CardTitle className="text-yellow-700">Envio em Atraso</CardTitle>
+              <Clock className="h-5 w-5 text-primary" />
+              <CardTitle className="text-primary">Lista de {competenciaAtualCapitalized}</CardTitle>
             </div>
             <CardDescription>
-              A janela de movimentação para {competenciaAtualCapitalized} encerrou no dia 20
+              {loteEmAndamento 
+                ? `Status atual do envio mensal - ${loteEmAndamento.obras?.nome || ""}` 
+                : "Gerencie o envio mensal de colaboradores"
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="h-4 w-4" />
-                <span>Entre em contato com o suporte para regularizar</span>
-              </div>
+              {loteEmAndamento ? (
+                <div className="flex items-center gap-3">
+                  {getStatusBadge(loteEmAndamento.status)}
+                  <span className="text-sm text-muted-foreground">
+                    {loteEmAndamento.total_colaboradores || 0} colaboradores
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Calendar className="h-4 w-4" />
+                  <span>{isJanelaAberta ? `Dias restantes: ${20 - currentDay}` : "Janela encerrada"}</span>
+                </div>
+              )}
               <Button 
                 size="lg" 
-                variant="outline" 
-                className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10" 
+                className="gap-2" 
                 onClick={handleEnviarLista}
               >
                 <Send className="h-4 w-4" />
-                Enviar Lista do Mês (Atrasado)
+                Enviar Lista do Mês
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Alerta de Atraso */}
+      {!isJanelaAberta && !loteEmAndamento && (
+        <Alert className="border-yellow-500/30 bg-yellow-500/5">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-700">
+            A janela de movimentação para {competenciaAtualCapitalized} encerrou no dia 20. 
+            Entre em contato com o suporte se precisar regularizar.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Alerta de Pendências */}
+      {loteEmAndamento?.status === "com_pendencia" && (
+        <Alert className="border-red-500/30 bg-red-500/5">
+          <AlertTriangle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-700">
+            Há pendências a resolver no lote de {loteEmAndamento.obras?.nome || competenciaAtualCapitalized}.
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Cards de Resumo */}
