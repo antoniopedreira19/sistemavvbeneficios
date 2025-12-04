@@ -226,7 +226,12 @@ const Operacional = () => {
               Lotes Aguardando Processamento
             </h3>
             <LotesTable
-              lotes={entradaData?.data || []}
+              lotes={[...(entradaData?.data || [])].sort((a, b) => {
+                // Correções (total_reprovados > 0) aparecem primeiro
+                const aIsCorrecao = (a.total_reprovados ?? 0) > 0 ? 1 : 0;
+                const bIsCorrecao = (b.total_reprovados ?? 0) > 0 ? 1 : 0;
+                return bIsCorrecao - aIsCorrecao;
+              })}
               isLoading={entradaLoading}
               currentPage={pages.aguardando_processamento}
               totalPages={Math.ceil(getTabCount(entradaData) / ITEMS_PER_PAGE)}
