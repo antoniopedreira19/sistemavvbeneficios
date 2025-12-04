@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -21,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Copy } from "lucide-react";
 
 interface ProcessarRetornoDialogProps {
   open: boolean;
@@ -52,6 +51,7 @@ export function ProcessarRetornoDialog({
 }: ProcessarRetornoDialogProps) {
   const queryClient = useQueryClient();
   const [reprovados, setReprovados] = useState<Map<string, ReprovadoInfo>>(new Map());
+  const [motivoEmLote, setMotivoEmLote] = useState("");
 
   const { data: colaboradores, isLoading } = useQuery({
     queryKey: ["colaboradores-lote", loteId],
@@ -151,6 +151,19 @@ export function ProcessarRetornoDialog({
     }
   };
 
+  const aplicarMotivoEmLote = () => {
+    if (!motivoEmLote.trim()) {
+      toast.error("Digite um motivo para aplicar");
+      return;
+    }
+    const newReprovados = new Map(reprovados);
+    for (const [id, info] of newReprovados) {
+      newReprovados.set(id, { ...info, motivo: motivoEmLote });
+    }
+    setReprovados(newReprovados);
+    toast.success(`Motivo aplicado a ${newReprovados.size} colaborador(es)`);
+  };
+
   const handleProcessar = () => {
     // Validar que todos reprovados têm motivo
     for (const [, info] of reprovados) {
@@ -181,6 +194,27 @@ export function ProcessarRetornoDialog({
             <p className="text-sm">
               Marque os colaboradores que foram <strong>reprovados</strong> pela seguradora:
             </p>
+
+            {reprovados.size > 0 && (
+              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border">
+                <Input
+                  placeholder="Motivo em lote..."
+                  value={motivoEmLote}
+                  onChange={(e) => setMotivoEmLote(e.target.value)}
+                  className="flex-1 h-9"
+                />
+                <Button 
+                  type="button" 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={aplicarMotivoEmLote}
+                  className="shrink-0"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Aplicar a {reprovados.size} selecionado(s)
+                </Button>
+              </div>
+            )}
 
             <Table>
               <TableHeader>
