@@ -302,7 +302,7 @@ const ClienteDashboard = () => {
           </CardContent>
         </Card>
       ) : isJanelaAberta ? (
-        // Janela aberta, sem lote - precisa importar
+        // Janela aberta, sem lote - precisa importar primeiro
         <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-emerald-500/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -322,10 +322,10 @@ const ClienteDashboard = () => {
               <Button 
                 size="lg" 
                 className="gap-2" 
-                onClick={() => navigate("/cliente/minha-equipe")}
+                onClick={handleEnviarLista}
               >
-                <FileSpreadsheet className="h-4 w-4" />
-                Importar Lista em Minha Equipe
+                <Send className="h-4 w-4" />
+                Enviar Lista do Mês
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -353,10 +353,10 @@ const ClienteDashboard = () => {
                 size="lg" 
                 variant="outline" 
                 className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10" 
-                onClick={() => navigate("/cliente/minha-equipe")}
+                onClick={handleEnviarLista}
               >
-                <FileSpreadsheet className="h-4 w-4" />
-                Importar Lista (Atrasado)
+                <Send className="h-4 w-4" />
+                Enviar Lista do Mês (Atrasado)
               </Button>
             </div>
           </CardContent>
