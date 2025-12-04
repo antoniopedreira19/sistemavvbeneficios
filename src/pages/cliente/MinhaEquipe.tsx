@@ -44,7 +44,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
-import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -58,9 +57,6 @@ const MinhaEquipe = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [loteIdParaImportacao, setLoteIdParaImportacao] = useState<string | null>(null);
-
-  const { criarOuBuscarLote } = useImportarColaboradores();
 
   // Competência atual
   const now = new Date();
@@ -171,18 +167,9 @@ const MinhaEquipe = () => {
     return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Desligado</Badge>;
   };
 
-  const handleOpenImport = async () => {
+  const handleOpenImport = () => {
     if (!empresaId || selectedObra === "all") return;
-    
-    try {
-      const loteId = await criarOuBuscarLote(empresaId, selectedObra, competenciaAtualCapitalized);
-      if (loteId) {
-        setLoteIdParaImportacao(loteId);
-        setIsImportDialogOpen(true);
-      }
-    } catch (error) {
-      console.error("Erro ao criar/buscar lote:", error);
-    }
+    setIsImportDialogOpen(true);
   };
 
   const handleImportSuccess = () => {
@@ -410,13 +397,12 @@ const MinhaEquipe = () => {
       </Card>
 
       {/* Dialog de Importação */}
-      {loteIdParaImportacao && empresaId && selectedObra !== "all" && (
+      {empresaId && selectedObra !== "all" && (
         <ImportarColaboradoresDialog
           open={isImportDialogOpen}
           onOpenChange={setIsImportDialogOpen}
           empresaId={empresaId}
           obraId={selectedObra}
-          loteId={loteIdParaImportacao}
           competencia={competenciaAtualCapitalized}
           onSuccess={handleImportSuccess}
         />

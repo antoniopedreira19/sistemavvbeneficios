@@ -42,7 +42,6 @@ interface ImportarColaboradoresDialogProps {
   onOpenChange: (open: boolean) => void;
   empresaId: string;
   obraId: string;
-  loteId: string;
   competencia: string;
   onSuccess: () => void;
 }
@@ -122,7 +121,6 @@ export function ImportarColaboradoresDialog({
   onOpenChange, 
   empresaId, 
   obraId, 
-  loteId,
   competencia,
   onSuccess 
 }: ImportarColaboradoresDialogProps) {
@@ -132,7 +130,7 @@ export function ImportarColaboradoresDialog({
   const [desligamentosPrevistos, setDesligamentosPrevistos] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { importing, saveImportedColaboradores, repetirMesAnterior } = useImportarColaboradores();
+  const { importing, saveImportedColaboradores, repetirMesAnterior, criarOuBuscarLote } = useImportarColaboradores();
 
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -376,6 +374,13 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
+      // Criar ou buscar lote apenas na confirmação
+      const loteId = await criarOuBuscarLote(empresaId, obraId, competencia);
+      if (!loteId) {
+        toast.error("Erro ao criar lote para importação");
+        return;
+      }
+
       const result = await saveImportedColaboradores(
         colaboradoresValidos.map(r => ({
           nome: r.nome,
@@ -410,6 +415,13 @@ export function ImportarColaboradoresDialog({
 
   const handleRepetirMesAnterior = async () => {
     try {
+      // Criar ou buscar lote apenas na confirmação
+      const loteId = await criarOuBuscarLote(empresaId, obraId, competencia);
+      if (!loteId) {
+        toast.error("Erro ao criar lote para importação");
+        return;
+      }
+
       const result = await repetirMesAnterior(empresaId, obraId, loteId);
       
       if (result) {
