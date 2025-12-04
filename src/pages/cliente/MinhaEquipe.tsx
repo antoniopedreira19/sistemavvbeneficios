@@ -57,6 +57,8 @@ const MinhaEquipe = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isSelectObraDialogOpen, setIsSelectObraDialogOpen] = useState(false);
+  const [obraParaImportar, setObraParaImportar] = useState<string | null>(null);
 
   // Competência atual
   const now = new Date();
@@ -168,7 +170,12 @@ const MinhaEquipe = () => {
   };
 
   const handleOpenImport = () => {
-    if (!empresaId || selectedObra === "all") return;
+    setIsSelectObraDialogOpen(true);
+  };
+
+  const handleSelectObraParaImportar = (obraId: string) => {
+    setObraParaImportar(obraId);
+    setIsSelectObraDialogOpen(false);
     setIsImportDialogOpen(true);
   };
 
@@ -202,8 +209,6 @@ const MinhaEquipe = () => {
             onClick={handleOpenImport} 
             variant="outline" 
             className="gap-2"
-            disabled={selectedObra === "all"}
-            title={selectedObra === "all" ? "Selecione uma obra para importar" : ""}
           >
             <Upload className="h-4 w-4" />
             Importar Lista
@@ -235,7 +240,7 @@ const MinhaEquipe = () => {
       <Alert className="bg-blue-500/5 border-blue-500/20">
         <Info className="h-4 w-4 text-blue-600" />
         <AlertDescription className="text-sm">
-          <strong>Como enviar a lista mensal:</strong> Selecione uma obra no filtro abaixo, clique em "Importar Lista" para carregar a planilha de colaboradores. 
+          <strong>Como enviar a lista mensal:</strong> Clique em "Importar Lista" para carregar a planilha de colaboradores. 
           Depois, vá ao <strong>Painel</strong> para enviar a lista para processamento.
         </AlertDescription>
       </Alert>
@@ -396,13 +401,53 @@ const MinhaEquipe = () => {
         </CardContent>
       </Card>
 
+      {/* Dialog de Seleção de Obra para Importar */}
+      <Dialog open={isSelectObraDialogOpen} onOpenChange={setIsSelectObraDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Selecionar Obra</DialogTitle>
+            <DialogDescription>
+              Escolha a obra para importar a lista de colaboradores
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            {obrasLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : obras && obras.length > 0 ? (
+              obras.map((obra) => (
+                <Button
+                  key={obra.id}
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3"
+                  onClick={() => handleSelectObraParaImportar(obra.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span>{obra.nome}</span>
+                  </div>
+                </Button>
+              ))
+            ) : (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Nenhuma obra cadastrada. Cadastre uma obra primeiro.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog de Importação */}
-      {empresaId && selectedObra !== "all" && (
+      {empresaId && obraParaImportar && (
         <ImportarColaboradoresDialog
           open={isImportDialogOpen}
           onOpenChange={setIsImportDialogOpen}
           empresaId={empresaId}
-          obraId={selectedObra}
+          obraId={obraParaImportar}
           competencia={competenciaAtualCapitalized}
           onSuccess={handleImportSuccess}
         />
