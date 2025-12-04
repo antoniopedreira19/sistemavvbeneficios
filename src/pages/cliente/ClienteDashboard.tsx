@@ -345,7 +345,7 @@ const ClienteDashboard = () => {
         <p className="text-muted-foreground">Central de ações e acompanhamento</p>
       </div>
 
-      {/* Card Principal - Status do Mês */}
+      {/* Card Principal - Status do Mês com TODAS as obras */}
       {loteLoading ? (
         <Card className="border-muted">
           <CardContent className="flex items-center justify-center py-8">
@@ -355,63 +355,86 @@ const ClienteDashboard = () => {
       ) : (
         <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" />
-              <CardTitle className="text-primary">Lista de {competenciaAtualCapitalized}</CardTitle>
-            </div>
-            <CardDescription>
-              {loteEmAndamento 
-                ? `Status atual do envio mensal - ${loteEmAndamento.obras?.nome || ""}` 
-                : "Gerencie o envio mensal de colaboradores"
-              }
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-              {loteEmAndamento ? (
-                <div className="flex items-center gap-3">
-                  {getStatusBadge(loteEmAndamento.status)}
-                  <span className="text-sm text-muted-foreground">
-                    {loteEmAndamento.total_colaboradores || 0} colaboradores
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  <span>{isJanelaAberta ? `Dias restantes: ${20 - currentDay}` : "Janela encerrada"}</span>
-                </div>
-              )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <CardTitle className="text-primary">Lista de {competenciaAtualCapitalized}</CardTitle>
+              </div>
               <Button 
-                size="lg" 
                 className="gap-2" 
                 onClick={handleEnviarLista}
               >
                 <Send className="h-4 w-4" />
                 Enviar Lista do Mês
-                <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
+            <CardDescription>
+              {isJanelaAberta 
+                ? `Dias restantes: ${20 - currentDay}` 
+                : "Janela encerrada - entre em contato com suporte"
+              }
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {obrasComStatus.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Nenhuma obra cadastrada.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {obrasComStatus.map((obra) => (
+                  <div 
+                    key={obra.id}
+                    className={`flex items-center justify-between p-3 rounded-lg border ${
+                      obra.jaEnviado 
+                        ? "border-blue-500/30 bg-blue-500/5"
+                        : obra.temLista
+                          ? "border-green-500/30 bg-green-500/5"
+                          : "border-orange-500/30 bg-orange-500/5"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Building2 className={`h-5 w-5 ${
+                        obra.jaEnviado 
+                          ? "text-blue-600"
+                          : obra.temLista
+                            ? "text-green-600"
+                            : "text-orange-600"
+                      }`} />
+                      <div>
+                        <p className="font-medium">{obra.nome}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {obra.totalVidas} vidas
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      {obra.jaEnviado ? (
+                        getStatusBadge(obra.status!)
+                      ) : obra.temLista ? (
+                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                          Pronto para enviar
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20">
+                          Sem lista
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Alerta de Atraso */}
-      {!isJanelaAberta && !loteEmAndamento && (
-        <Alert className="border-yellow-500/30 bg-yellow-500/5">
-          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          <AlertDescription className="text-yellow-700">
-            A janela de movimentação para {competenciaAtualCapitalized} encerrou no dia 20. 
-            Entre em contato com o suporte se precisar regularizar.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Alerta de Pendências */}
-      {loteEmAndamento?.status === "com_pendencia" && (
+      {/* Alerta de Pendências - mostra se alguma obra tem pendência */}
+      {obrasComStatus.some(o => o.status === "com_pendencia") && (
         <Alert className="border-red-500/30 bg-red-500/5">
           <AlertTriangle className="h-4 w-4 text-red-600" />
           <AlertDescription className="text-red-700">
-            Há pendências a resolver no lote de {loteEmAndamento.obras?.nome || competenciaAtualCapitalized}.
+            Há obras com pendências a resolver. Verifique os detalhes acima.
           </AlertDescription>
         </Alert>
       )}
