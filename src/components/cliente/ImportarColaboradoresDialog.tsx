@@ -65,7 +65,7 @@ const normalizarSexo = (valor: any): string | null => {
   const str = String(valor).trim().toLowerCase();
   
   if (["masculino", "masc", "m"].includes(str)) return "Masculino";
-  if (["feminino", "fem", "f"].includes(str)) return "Feminino";
+  if (["feminino", "fem", "f", "femi"].includes(str)) return "Feminino";
   if (["outro", "o"].includes(str)) return "Outro";
   
   return null;
