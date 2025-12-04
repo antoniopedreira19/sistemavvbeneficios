@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { 
-  Upload, 
+  Send, 
   Users, 
   FileText, 
   Clock, 
@@ -8,47 +8,38 @@ import {
   AlertTriangle,
   ArrowRight,
   Calendar,
-  Loader2
+  Loader2,
+  FileSpreadsheet
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
-import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const ClienteDashboard = () => {
   const { profile, loading: profileLoading } = useUserRole();
   const empresaId = profile?.empresa_id;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  // Estados para o dialog de importação
-  const [isSelectObraOpen, setIsSelectObraOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [selectedObraId, setSelectedObraId] = useState<string | null>(null);
-  const [loteIdParaImportacao, setLoteIdParaImportacao] = useState<string | null>(null);
-  const [preparingImport, setPreparingImport] = useState(false);
-
-  const { criarOuBuscarLote } = useImportarColaboradores();
+  // Estados
+  const [isConfirmEnvioOpen, setIsConfirmEnvioOpen] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [loteParaEnviar, setLoteParaEnviar] = useState<any>(null);
 
   // Competência atual (mês/ano)
   const now = new Date();
@@ -56,23 +47,6 @@ const ClienteDashboard = () => {
   const competenciaAtual = format(now, "MMMM/yyyy", { locale: ptBR });
   const competenciaAtualCapitalized = competenciaAtual.charAt(0).toUpperCase() + competenciaAtual.slice(1);
   const isJanelaAberta = currentDay <= 20;
-
-  // Buscar obras da empresa
-  const { data: obras } = useQuery({
-    queryKey: ["obras", empresaId],
-    queryFn: async () => {
-      if (!empresaId) return [];
-      const { data, error } = await supabase
-        .from("obras")
-        .select("id, nome")
-        .eq("empresa_id", empresaId)
-        .eq("status", "ativa")
-        .order("nome");
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!empresaId,
-  });
 
   // Buscar dados da empresa
   const { data: empresa } = useQuery({
@@ -90,84 +64,34 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
-  // Handler para abrir seleção de obra
-  const handleEnviarLista = () => {
-    if (!obras || obras.length === 0) {
-      toast.error("Você precisa cadastrar pelo menos uma obra antes de enviar a lista");
-      return;
-    }
-    
-    if (obras.length === 1) {
-      // Se só tem uma obra, usa ela diretamente
-      handleConfirmObra(obras[0].id);
-    } else {
-      // Se tem múltiplas obras, abre o dialog de seleção
-      setIsSelectObraOpen(true);
-    }
-  };
-
-  // Handler para confirmar obra e abrir importação
-  const handleConfirmObra = async (obraId: string) => {
-    if (!empresaId) {
-      toast.error("Empresa não identificada");
-      return;
-    }
-    
-    setPreparingImport(true);
-    
-    try {
-      const loteId = await criarOuBuscarLote(empresaId, obraId, competenciaAtualCapitalized);
-      if (loteId) {
-        setSelectedObraId(obraId);
-        setLoteIdParaImportacao(loteId);
-        setIsSelectObraOpen(false);
-        setIsImportDialogOpen(true);
-      } else {
-        toast.error("Não foi possível criar o lote. Tente novamente.");
-      }
-    } catch (error: any) {
-      console.error("Erro ao criar/buscar lote:", error);
-      toast.error(error?.message || "Erro ao preparar importação. Verifique suas permissões.");
-    } finally {
-      setPreparingImport(false);
-    }
-  };
-
-  // Handler de sucesso da importação
-  const handleImportSuccess = () => {
-    queryClient.invalidateQueries({ queryKey: ["lote-atual"] });
-    queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
-    queryClient.invalidateQueries({ queryKey: ["total-colaboradores"] });
-  };
-
-  // Buscar lote do mês atual
-  const { data: loteAtual, isLoading: loteLoading } = useQuery({
-    queryKey: ["lote-atual", empresaId, competenciaAtualCapitalized],
+  // Buscar lote do mês atual (pode ter múltiplos por obra)
+  const { data: lotesAtuais, isLoading: loteLoading } = useQuery({
+    queryKey: ["lotes-atuais", empresaId, competenciaAtualCapitalized],
     queryFn: async () => {
-      if (!empresaId) return null;
+      if (!empresaId) return [];
       const { data, error } = await supabase
         .from("lotes_mensais")
-        .select("*")
+        .select("*, obras(nome)")
         .eq("empresa_id", empresaId)
         .eq("competencia", competenciaAtualCapitalized)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data || [];
     },
     enabled: !!empresaId,
   });
 
-  // Buscar histórico (últimos 3 lotes)
+  // Buscar histórico (últimos 5 lotes)
   const { data: historico, isLoading: historicoLoading } = useQuery({
     queryKey: ["historico-lotes", empresaId],
     queryFn: async () => {
       if (!empresaId) return [];
       const { data, error } = await supabase
         .from("lotes_mensais")
-        .select("*")
+        .select("*, obras(nome)")
         .eq("empresa_id", empresaId)
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(5);
       if (error) throw error;
       return data || [];
     },
@@ -208,6 +132,61 @@ const ClienteDashboard = () => {
     enabled: !!empresaId,
   });
 
+  // Verificar se existe lote em rascunho com colaboradores
+  const loteRascunhoComColaboradores = lotesAtuais?.find(
+    l => l.status === "rascunho" && (l.total_colaboradores || 0) > 0
+  );
+
+  // Verificar lote principal (o mais recente ou o em andamento)
+  const loteAtual = lotesAtuais?.[0];
+
+  // Handler para abrir confirmação de envio
+  const handleEnviarLista = () => {
+    if (!loteRascunhoComColaboradores) {
+      toast.info(
+        "Você precisa importar a lista de colaboradores primeiro. Vá para 'Minha Equipe'.",
+        { duration: 5000 }
+      );
+      navigate("/cliente/minha-equipe");
+      return;
+    }
+    
+    setLoteParaEnviar(loteRascunhoComColaboradores);
+    setIsConfirmEnvioOpen(true);
+  };
+
+  // Handler para confirmar envio (submeter para processamento)
+  const handleConfirmarEnvio = async () => {
+    if (!loteParaEnviar) return;
+    
+    setEnviando(true);
+    
+    try {
+      const { error } = await supabase
+        .from("lotes_mensais")
+        .update({ 
+          status: "aguardando_processamento",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", loteParaEnviar.id);
+
+      if (error) throw error;
+
+      toast.success("Lista enviada para processamento com sucesso!");
+      setIsConfirmEnvioOpen(false);
+      setLoteParaEnviar(null);
+      
+      // Atualizar dados
+      queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
+      queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
+    } catch (error: any) {
+      console.error("Erro ao enviar lista:", error);
+      toast.error(error?.message || "Erro ao enviar lista. Tente novamente.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "concluido":
@@ -236,6 +215,7 @@ const ClienteDashboard = () => {
     if (!loteAtual) return "Pendente";
     if (loteAtual.status === "concluido" || loteAtual.status === "faturado") return "Em dia";
     if (loteAtual.status === "com_pendencia") return "Pendente";
+    if (loteAtual.status === "rascunho") return "Pendente";
     return "Em andamento";
   };
 
@@ -262,7 +242,8 @@ const ClienteDashboard = () => {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </CardContent>
         </Card>
-      ) : loteAtual ? (
+      ) : loteAtual && loteAtual.status !== "rascunho" ? (
+        // Lote já enviado (não é rascunho)
         <Card className="border-blue-500/30 bg-gradient-to-br from-blue-500/5 to-indigo-500/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -271,6 +252,7 @@ const ClienteDashboard = () => {
             </div>
             <CardDescription>
               Status atual do envio mensal
+              {loteAtual.obras?.nome && ` - ${loteAtual.obras.nome}`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -278,7 +260,7 @@ const ClienteDashboard = () => {
               <div className="flex items-center gap-3">
                 {getStatusBadge(loteAtual.status)}
                 <span className="text-sm text-muted-foreground">
-                  {loteAtual.total_colaboradores} colaboradores
+                  {loteAtual.total_colaboradores || 0} colaboradores
                 </span>
               </div>
               {loteAtual.status === "com_pendencia" && (
@@ -290,7 +272,37 @@ const ClienteDashboard = () => {
             </div>
           </CardContent>
         </Card>
+      ) : loteRascunhoComColaboradores ? (
+        // Lote em rascunho com colaboradores - pronto para enviar
+        <Card className="border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-orange-500/10">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-amber-600" />
+              <CardTitle className="text-amber-700">Lista Pronta para Envio</CardTitle>
+            </div>
+            <CardDescription>
+              Você tem uma lista de {competenciaAtualCapitalized} aguardando envio
+              {loteRascunhoComColaboradores.obras?.nome && ` - ${loteRascunhoComColaboradores.obras.nome}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex items-center gap-3">
+                {getStatusBadge("rascunho")}
+                <span className="text-sm text-muted-foreground">
+                  {loteRascunhoComColaboradores.total_colaboradores || 0} colaboradores importados
+                </span>
+              </div>
+              <Button size="lg" className="gap-2 bg-amber-600 hover:bg-amber-700" onClick={handleEnviarLista}>
+                <Send className="h-4 w-4" />
+                Enviar para Processamento
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       ) : isJanelaAberta ? (
+        // Janela aberta, sem lote - precisa importar
         <Card className="border-green-500/30 bg-gradient-to-br from-green-500/5 to-emerald-500/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -307,15 +319,20 @@ const ClienteDashboard = () => {
                 <Calendar className="h-4 w-4" />
                 <span>Dias restantes: {20 - currentDay}</span>
               </div>
-              <Button size="lg" className="gap-2" onClick={handleEnviarLista}>
-                <Upload className="h-4 w-4" />
-                Enviar Lista de {competenciaAtualCapitalized.split("/")[0]}
+              <Button 
+                size="lg" 
+                className="gap-2" 
+                onClick={() => navigate("/cliente/minha-equipe")}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Importar Lista em Minha Equipe
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : (
+        // Janela fechada
         <Card className="border-yellow-500/30 bg-gradient-to-br from-yellow-500/5 to-orange-500/10">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
@@ -332,9 +349,14 @@ const ClienteDashboard = () => {
                 <Clock className="h-4 w-4" />
                 <span>Entre em contato com o suporte para regularizar</span>
               </div>
-              <Button size="lg" variant="outline" className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10" onClick={handleEnviarLista}>
-                <Upload className="h-4 w-4" />
-                Enviar Lista (Atrasado)
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="gap-2 border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/10" 
+                onClick={() => navigate("/cliente/minha-equipe")}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Importar Lista (Atrasado)
               </Button>
             </div>
           </CardContent>
@@ -404,7 +426,10 @@ const ClienteDashboard = () => {
                       <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-medium">{item.competencia}</p>
+                      <p className="font-medium">
+                        {item.competencia}
+                        {item.obras?.nome && <span className="text-muted-foreground font-normal"> - {item.obras.nome}</span>}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         {item.created_at ? format(new Date(item.created_at), "dd/MM/yyyy") : "-"} • {item.total_colaboradores || 0} vidas
                       </p>
@@ -427,50 +452,55 @@ const ClienteDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Dialog de Seleção de Obra */}
-      <Dialog open={isSelectObraOpen} onOpenChange={setIsSelectObraOpen}>
+      {/* Dialog de Confirmação de Envio */}
+      <Dialog open={isConfirmEnvioOpen} onOpenChange={setIsConfirmEnvioOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Selecione a Obra</DialogTitle>
+            <DialogTitle>Confirmar Envio da Lista</DialogTitle>
             <DialogDescription>
-              Escolha a obra para a qual deseja enviar a lista de {competenciaAtualCapitalized}
+              Você está prestes a enviar a lista de {competenciaAtualCapitalized} para processamento.
+              {loteParaEnviar?.obras?.nome && ` (${loteParaEnviar.obras.nome})`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {obras?.map((obra) => (
-              <Button
-                key={obra.id}
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => handleConfirmObra(obra.id)}
-                disabled={preparingImport}
-              >
-                {preparingImport ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Preparando...
-                  </>
-                ) : (
-                  obra.nome
-                )}
-              </Button>
-            ))}
+          
+          <div className="py-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total de colaboradores:</span>
+                <span className="font-semibold">{loteParaEnviar?.total_colaboradores || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Competência:</span>
+                <span className="font-semibold">{competenciaAtualCapitalized}</span>
+              </div>
+            </div>
+            
+            <p className="text-sm text-muted-foreground mt-4">
+              Após o envio, a lista será analisada pela equipe administrativa. 
+              Você receberá notificações sobre o andamento do processo.
+            </p>
           </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfirmEnvioOpen(false)} disabled={enviando}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmarEnvio} disabled={enviando}>
+              {enviando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Confirmar Envio
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Dialog de Importação */}
-      {loteIdParaImportacao && empresaId && selectedObraId && (
-        <ImportarColaboradoresDialog
-          open={isImportDialogOpen}
-          onOpenChange={setIsImportDialogOpen}
-          empresaId={empresaId}
-          obraId={selectedObraId}
-          loteId={loteIdParaImportacao}
-          competencia={competenciaAtualCapitalized}
-          onSuccess={handleImportSuccess}
-        />
-      )}
     </div>
   );
 };

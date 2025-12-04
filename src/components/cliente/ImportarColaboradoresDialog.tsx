@@ -199,12 +199,39 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
-      const headers = jsonData[0].map((h: any) => String(h).trim());
-      const requiredHeaders = ["Nome", "Sexo", "CPF", "Data Nascimento", "Salário"];
+      // Normalizar cabeçalhos (case-insensitive e remover acentos)
+      const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
+      const normalizeHeader = (h: string) => h.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+        .replace(/[^a-z0-9]/g, ""); // remove caracteres especiais
       
-      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
-      if (missingHeaders.length > 0) {
-        toast.error(`Colunas obrigatórias faltando: ${missingHeaders.join(", ")}`);
+      const normalizedHeaders = rawHeaders.map(normalizeHeader);
+      
+      // Mapeamento de colunas (flexível)
+      const headerMapping: Record<string, string[]> = {
+        "Nome": ["nome", "nomecompleto", "funcionario", "colaborador"],
+        "Sexo": ["sexo", "genero", "gender"],
+        "CPF": ["cpf", "documento", "doc"],
+        "Data Nascimento": ["datanascimento", "nascimento", "dtnasc", "datanasc", "dtnascimento"],
+        "Salário": ["salario", "remuneracao", "vencimento", "salariobase"],
+      };
+      
+      // Encontrar índice de cada coluna
+      const columnIndexes: Record<string, number> = {};
+      const missingColumns: string[] = [];
+      
+      for (const [requiredCol, aliases] of Object.entries(headerMapping)) {
+        const foundIndex = normalizedHeaders.findIndex(h => aliases.includes(h));
+        if (foundIndex === -1) {
+          missingColumns.push(requiredCol);
+        } else {
+          columnIndexes[requiredCol] = foundIndex;
+        }
+      }
+      
+      if (missingColumns.length > 0) {
+        toast.error(`Colunas obrigatórias não encontradas: ${missingColumns.join(", ")}. Verifique se sua planilha possui: Nome, Sexo, CPF, Data Nascimento, Salário`);
+        setProcessing(false);
         return;
       }
 
@@ -225,10 +252,20 @@ export function ImportarColaboradoresDialog({
 
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        const rowData: any = {};
-        headers.forEach((header, idx) => {
-          rowData[header] = row[idx];
-        });
+        
+        // Pular linhas vazias
+        if (!row || row.length === 0 || row.every((cell: any) => !cell)) {
+          continue;
+        }
+        
+        // Extrair dados usando os índices mapeados
+        const rowData = {
+          Nome: row[columnIndexes["Nome"]],
+          Sexo: row[columnIndexes["Sexo"]],
+          CPF: row[columnIndexes["CPF"]],
+          "Data Nascimento": row[columnIndexes["Data Nascimento"]],
+          Salário: row[columnIndexes["Salário"]],
+        };
 
         const erros: string[] = [];
         const linha = i + 1;
