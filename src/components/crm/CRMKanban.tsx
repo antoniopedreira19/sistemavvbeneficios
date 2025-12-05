@@ -267,16 +267,19 @@ export function CRMKanban() {
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
                                   {...provided.dragHandleProps}
-                                  // REMOVIDO: transition-all duration-200 (Causa do glitch)
-                                  // ADICIONADO: hover apenas quando não está arrastando
+                                  style={{
+                                    ...provided.draggableProps.style,
+                                    // Remove transições durante o drag para evitar flickering
+                                    transition: snapshot.isDragging 
+                                      ? undefined 
+                                      : 'box-shadow 0.2s ease',
+                                  }}
                                   className={`
-                                    cursor-grab active:cursor-grabbing border-none shadow-sm group relative
-                                    ${
-                                      snapshot.isDragging
-                                        ? "shadow-2xl ring-2 ring-primary scale-105 z-50 opacity-90"
-                                        : "hover:shadow-md hover:-translate-y-0.5 transition-transform duration-200"
+                                    cursor-grab active:cursor-grabbing border-none shadow-sm group/card relative bg-white
+                                    ${snapshot.isDragging 
+                                      ? "shadow-2xl ring-2 ring-primary/40 z-50" 
+                                      : "hover:shadow-lg"
                                     }
-                                    bg-white
                                   `}
                                 >
                                   <CardContent className="p-4 space-y-4">
