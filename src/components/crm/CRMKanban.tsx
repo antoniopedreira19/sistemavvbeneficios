@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
@@ -6,7 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { User, Mail, Phone, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { User, Mail, Phone, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
@@ -88,6 +89,19 @@ export function CRMKanban() {
   const queryClient = useQueryClient();
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+    }
+  };
+
+  const scrollRight = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+    }
+  };
 
   const { data: empresas = [], isLoading } = useQuery({
     queryKey: ["empresas-crm"],
@@ -203,8 +217,8 @@ export function CRMKanban() {
 
   return (
     <>
-      {/* Search Bar */}
-      <div className="mb-4">
+      {/* Search Bar and Navigation */}
+      <div className="flex items-center justify-between gap-4 mb-4">
         <div className="relative w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -214,10 +228,34 @@ export function CRMKanban() {
             className="pl-9"
           />
         </div>
+        
+        {/* Scroll Navigation Buttons */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={scrollLeft}
+            className="h-8 w-8"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={scrollRight}
+            className="h-8 w-8"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div 
+          ref={scrollContainerRef}
+          className="flex gap-3 overflow-x-auto pb-4 scroll-smooth"
+          style={{ scrollbarWidth: "thin" }}
+        >
           {CRM_COLUMNS.map((column) => {
             const columnEmpresas = getColumnEmpresas(column.id);
             return (
