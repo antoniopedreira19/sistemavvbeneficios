@@ -134,11 +134,11 @@ export function CorrigirPendenciasDialog({
       const maxTentativa = Math.max(...reprovados.map(r => r.tentativa_reenvio));
       const novaTentativa = maxTentativa + 1;
 
-      // Atualizar status dos reprovados para pendente (nova tentativa)
+      // Atualizar status dos reprovados para "enviado" (já corrigido, pronto para análise)
       const { error: updateError } = await supabase
         .from("colaboradores_lote")
         .update({
-          status_seguradora: "pendente",
+          status_seguradora: "enviado",
           tentativa_reenvio: novaTentativa,
           data_tentativa: new Date().toISOString(),
           motivo_reprovacao_seguradora: null,
@@ -149,11 +149,11 @@ export function CorrigirPendenciasDialog({
 
       if (updateError) throw updateError;
 
-      // Atualizar status do lote para aguardando_processamento
+      // Fluxo segue para frente: lote vai direto para "Na Seguradora" (em_analise_seguradora)
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
-          status: "aguardando_processamento",
+          status: "em_analise_seguradora",
           updated_at: new Date().toISOString(),
         })
         .eq("id", loteId);
