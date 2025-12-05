@@ -33,6 +33,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { CorrigirPendenciasDialog } from "@/components/cliente/CorrigirPendenciasDialog";
+import { LoteDetalhesDialog } from "@/components/cliente/LoteDetalhesDialog";
 
 const ClienteDashboard = () => {
   const { profile, loading: profileLoading } = useUserRole();
@@ -48,6 +49,8 @@ const ClienteDashboard = () => {
     loteId: string;
     obraNome: string;
   }>({ open: false, loteId: "", obraNome: "" });
+  const [loteDetalhes, setLoteDetalhes] = useState<any>(null);
+  const [isDetalhesDialogOpen, setIsDetalhesDialogOpen] = useState(false);
 
   // Competência atual (mês/ano)
   const now = new Date();
@@ -587,7 +590,14 @@ const ClienteDashboard = () => {
                   </div>
                   <div className="flex items-center gap-3">
                     {getStatusBadge(item.status)}
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => {
+                        setLoteDetalhes(item);
+                        setIsDetalhesDialogOpen(true);
+                      }}
+                    >
                       Ver detalhes
                     </Button>
                   </div>
@@ -740,6 +750,13 @@ const ClienteDashboard = () => {
         loteId={pendenciaDialog.loteId}
         obraNome={pendenciaDialog.obraNome}
         competencia={competenciaAtualCapitalized}
+      />
+
+      {/* Dialog de Detalhes do Lote */}
+      <LoteDetalhesDialog
+        open={isDetalhesDialogOpen}
+        onOpenChange={setIsDetalhesDialogOpen}
+        lote={loteDetalhes}
       />
     </div>
   );
