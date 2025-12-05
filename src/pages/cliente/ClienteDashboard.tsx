@@ -315,13 +315,13 @@ const ClienteDashboard = () => {
 
       if (updateError) throw updateError;
 
+      // Atualizar dados ANTES de mostrar sucesso
+      await queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
+      await queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
+      await queryClient.invalidateQueries({ queryKey: ["obras-empresa-com-colaboradores"] });
+      
       toast.success(`Lista de ${obra.nome} enviada para processamento!`);
       setIsEnvioDialogOpen(false);
-      
-      // Atualizar dados
-      queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
-      queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
-      queryClient.invalidateQueries({ queryKey: ["obras-empresa-com-colaboradores"] });
     } catch (error: any) {
       console.error("Erro ao enviar lista:", error);
       toast.error(error?.message || "Erro ao enviar lista. Tente novamente.");
