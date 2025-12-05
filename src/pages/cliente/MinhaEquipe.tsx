@@ -8,7 +8,8 @@ import {
   ChevronRight,
   Loader2,
   Upload,
-  Info
+  Info,
+  Pencil
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
+import { EditarColaboradorDialog } from "@/components/cliente/EditarColaboradorDialog";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -59,6 +61,8 @@ const MinhaEquipe = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isSelectObraDialogOpen, setIsSelectObraDialogOpen] = useState(false);
   const [obraParaImportar, setObraParaImportar] = useState<string | null>(null);
+  const [colaboradorParaEditar, setColaboradorParaEditar] = useState<any>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   // Competência atual
   const now = new Date();
@@ -180,6 +184,16 @@ const MinhaEquipe = () => {
   };
 
   const handleImportSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    queryClient.invalidateQueries({ queryKey: ["colaboradores-stats"] });
+  };
+
+  const handleEditColaborador = (colaborador: any) => {
+    setColaboradorParaEditar(colaborador);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
     queryClient.invalidateQueries({ queryKey: ["colaboradores-stats"] });
   };
@@ -344,7 +358,11 @@ const MinhaEquipe = () => {
                 <TableBody>
                   {colaboradores.length > 0 ? (
                     colaboradores.map((colab: any) => (
-                      <TableRow key={colab.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableRow 
+                        key={colab.id} 
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => handleEditColaborador(colab)}
+                      >
                         <TableCell className="font-medium">{colab.nome}</TableCell>
                         <TableCell className="text-muted-foreground">{colab.cpf}</TableCell>
                         <TableCell>
@@ -354,7 +372,12 @@ const MinhaEquipe = () => {
                         <TableCell className="text-muted-foreground">
                           {colab.obras?.nome || "-"}
                         </TableCell>
-                        <TableCell>{getStatusBadge(colab)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getStatusBadge(colab)}
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
@@ -450,6 +473,16 @@ const MinhaEquipe = () => {
           obraId={obraParaImportar}
           competencia={competenciaAtualCapitalized}
           onSuccess={handleImportSuccess}
+        />
+      )}
+
+      {/* Dialog de Edição de Colaborador */}
+      {colaboradorParaEditar && (
+        <EditarColaboradorDialog
+          colaborador={colaboradorParaEditar}
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          onSuccess={handleEditSuccess}
         />
       )}
     </div>
