@@ -134,11 +134,11 @@ export function CorrigirPendenciasDialog({
       const maxTentativa = Math.max(...reprovados.map(r => r.tentativa_reenvio));
       const novaTentativa = maxTentativa + 1;
 
-      // Atualizar status dos reprovados para "pendente" (nova tentativa)
+      // Atualizar status dos reprovados para "enviado" (enviado para reanálise)
       const { error: updateError } = await supabase
         .from("colaboradores_lote")
         .update({
-          status_seguradora: "pendente",
+          status_seguradora: "enviado",
           tentativa_reenvio: novaTentativa,
           data_tentativa: new Date().toISOString(),
           motivo_reprovacao_seguradora: null,
@@ -149,11 +149,13 @@ export function CorrigirPendenciasDialog({
 
       if (updateError) throw updateError;
 
-      // Fluxo segue para frente: lote vai direto para "Na Seguradora" (em_analise_seguradora)
+      // Fluxo segue para frente: lote vai direto para "Reanálise" (em_analise_seguradora)
+      // total_reprovados > 0 fará o lote aparecer na aba "Reanálise" em vez de "Seguradora"
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
           status: "em_analise_seguradora",
+          enviado_seguradora_em: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", loteId);
@@ -165,8 +167,9 @@ export function CorrigirPendenciasDialog({
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados"] });
       queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
-      toast.success(`${result.totalReenviados} colaborador(es) reenviado(s) para análise`);
+      toast.success(`${result.totalReenviados} colaborador(es) reenviado(s) para reanálise`);
       onOpenChange(false);
     },
     onError: (error) => {

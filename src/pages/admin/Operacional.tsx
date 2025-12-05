@@ -1,304 +1,244 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Copy } from "lucide-react";
+import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2 } from "lucide-react";
+import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
+import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 
-interface ProcessarRetornoDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  loteId: string;
-  empresaNome: string;
-  competencia: string;
-}
+const ITEMS_PER_PAGE = 10;
 
-interface ColaboradorLote {
-  id: string;
-  nome: string;
-  cpf: string;
-  status_seguradora: string | null;
-}
-
-interface ReprovadoInfo {
-  id: string;
-  motivo: string;
-}
-
-export function ProcessarRetornoDialog({
-  open,
-  onOpenChange,
-  loteId,
-  empresaNome,
-  competencia,
-}: ProcessarRetornoDialogProps) {
+export default function Operacional() {
   const queryClient = useQueryClient();
-  const [reprovados, setReprovados] = useState<Map<string, ReprovadoInfo>>(new Map());
-  const [motivoEmLote, setMotivoEmLote] = useState("");
+  const [activeTab, setActiveTab] = useState("entrada");
+  const [currentPages, setCurrentPages] = useState<Record<string, number>>({
+    entrada: 1,
+    seguradora: 1,
+    pendencias: 1,
+    reanalise: 1,
+    prontos: 1,
+  });
+  const [enviarLoading, setEnviarLoading] = useState<string | null>(null);
+  const [processarDialogOpen, setProcessarDialogOpen] = useState(false);
+  const [selectedLote, setSelectedLote] = useState<LoteOperacional | null>(null);
 
-  const { data: colaboradores, isLoading } = useQuery({
-    queryKey: ["colaboradores-lote", loteId],
+  // Query para buscar lotes por status
+  const { data: lotes, isLoading } = useQuery({
+    queryKey: ["lotes-operacional"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("colaboradores_lote")
-        .select("id, nome, cpf, status_seguradora")
-        .eq("lote_id", loteId)
-        .order("nome");
+        .from("lotes_mensais")
+        .select(`
+          id,
+          competencia,
+          total_colaboradores,
+          total_reprovados,
+          valor_total,
+          created_at,
+          status,
+          empresa:empresas(nome),
+          obra:obras(nome)
+        `)
+        .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido"])
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data as ColaboradorLote[];
+      return data as LoteOperacional[];
     },
-    enabled: open,
   });
 
-  const processarMutation = useMutation({
-    mutationFn: async () => {
-      if (!colaboradores) throw new Error("Dados dos colaboradores não carregados.");
+  // Filtrar lotes por tab
+  const getLotesByTab = (tab: string) => {
+    if (!lotes) return [];
+    switch (tab) {
+      case "entrada":
+        return lotes.filter((l) => l.status === "aguardando_processamento");
+      case "seguradora":
+        // Novos envios: em_analise_seguradora SEM reprovações anteriores
+        return lotes.filter((l) => l.status === "em_analise_seguradora" && (l.total_reprovados ?? 0) === 0);
+      case "reanalise":
+        // Correções reenviadas: em_analise_seguradora COM reprovações anteriores
+        return lotes.filter((l) => l.status === "em_analise_seguradora" && (l.total_reprovados ?? 0) > 0);
+      case "pendencias":
+        return lotes.filter((l) => l.status === "com_pendencia");
+      case "prontos":
+        return lotes.filter((l) => l.status === "concluido");
+      default:
+        return [];
+    }
+  };
 
-      const reprovadosArray = Array.from(reprovados.entries());
+  // Paginação
+  const getPaginatedLotes = (tab: string) => {
+    const filtered = getLotesByTab(tab);
+    const page = currentPages[tab] || 1;
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(start, start + ITEMS_PER_PAGE);
+  };
 
-      // 1. Atualizar REPROVADOS
-      for (const [id, info] of reprovadosArray) {
-        const { error } = await supabase
-          .from("colaboradores_lote")
-          .update({
-            status_seguradora: "reprovado",
-            motivo_reprovacao_seguradora: info.motivo,
-          })
-          .eq("id", id);
-        if (error) throw error;
-      }
+  const getTotalPages = (tab: string) => {
+    return Math.ceil(getLotesByTab(tab).length / ITEMS_PER_PAGE);
+  };
 
-      // 2. Atualizar APROVADOS (Todos que NÃO estão na lista de reprovados)
-      const reprovadosIds = Array.from(reprovados.keys());
-      const aprovadosIds = colaboradores.filter((c) => !reprovadosIds.includes(c.id)).map((c) => c.id);
+  // Enviar para seguradora
+  const enviarParaSeguradora = async (lote: LoteOperacional) => {
+    setEnviarLoading(lote.id);
+    try {
+      // Atualizar colaboradores para "enviado"
+      const { error: colabError } = await supabase
+        .from("colaboradores_lote")
+        .update({
+          status_seguradora: "enviado",
+          data_tentativa: new Date().toISOString(),
+        })
+        .eq("lote_id", lote.id)
+        .eq("status_seguradora", "pendente");
 
-      if (aprovadosIds.length > 0) {
-        const { error } = await supabase
-          .from("colaboradores_lote")
-          // Importante: Limpar o motivo se foi aprovado (caso fosse um reenvio corrigido)
-          .update({
-            status_seguradora: "aprovado",
-            motivo_reprovacao_seguradora: null,
-          })
-          .in("id", aprovadosIds);
+      if (colabError) throw colabError;
 
-        if (error) throw error;
-      }
-
-      // 3. Atualizar Status do LOTE
-      const novoStatus = reprovadosArray.length > 0 ? "com_pendencia" : "concluido";
-      const totalAprovados = colaboradores.length - reprovadosArray.length;
-
+      // Atualizar status do lote
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
-          status: novoStatus,
-          total_aprovados: totalAprovados,
-          total_reprovados: reprovadosArray.length,
+          status: "em_analise_seguradora",
+          enviado_seguradora_em: new Date().toISOString(),
         })
-        .eq("id", loteId);
+        .eq("id", lote.id);
 
       if (loteError) throw loteError;
 
-      return { novoStatus, totalReprovados: reprovadosArray.length };
-    },
-    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      // Também invalidamos a lista de colaboradores para garantir dados frescos na próxima abertura
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-lote", loteId] });
-
-      toast.success(
-        result.novoStatus === "concluido"
-          ? "Lote aprovado com sucesso! Pronto para faturamento."
-          : `Processado: ${result.totalReprovados} colaborador(es) reprovado(s).`,
-      );
-      setReprovados(new Map());
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      console.error("Erro no processamento:", error);
-      // Mostra a mensagem real do erro para facilitar o debug
-      toast.error(`Erro ao processar: ${error.message || "Erro desconhecido no banco de dados."}`);
-    },
-  });
-
-  const toggleReprovado = (id: string, checked: boolean) => {
-    const newReprovados = new Map(reprovados);
-    if (checked) {
-      newReprovados.set(id, { id, motivo: "" });
-    } else {
-      newReprovados.delete(id);
-    }
-    setReprovados(newReprovados);
-  };
-
-  const updateMotivo = (id: string, motivo: string) => {
-    const newReprovados = new Map(reprovados);
-    const info = newReprovados.get(id);
-    if (info) {
-      newReprovados.set(id, { ...info, motivo });
-      setReprovados(newReprovados);
+      toast.success("Lote enviado para seguradora");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao enviar para seguradora");
+    } finally {
+      setEnviarLoading(null);
     }
   };
 
-  const aplicarMotivoEmLote = () => {
-    if (!motivoEmLote.trim()) {
-      toast.error("Digite um motivo para aplicar");
-      return;
-    }
-    const newReprovados = new Map(reprovados);
-    for (const [id, info] of newReprovados) {
-      newReprovados.set(id, { ...info, motivo: motivoEmLote });
-    }
-    setReprovados(newReprovados);
-    toast.success(`Motivo aplicado a ${newReprovados.size} colaborador(es)`);
+  // Abrir dialog de processar retorno
+  const abrirProcessarRetorno = (lote: LoteOperacional) => {
+    setSelectedLote(lote);
+    setProcessarDialogOpen(true);
   };
 
-  const handleProcessar = () => {
-    // Validar se todos os marcados como reprovados têm motivo
-    for (const [, info] of reprovados) {
-      if (!info.motivo.trim()) {
-        toast.error("Informe o motivo para todos os colaboradores reprovados");
-        return;
-      }
+  // Handler de ação baseado na tab
+  const handleAction = (lote: LoteOperacional, tab: string) => {
+    switch (tab) {
+      case "entrada":
+        enviarParaSeguradora(lote);
+        break;
+      case "seguradora":
+      case "reanalise":
+        abrirProcessarRetorno(lote);
+        break;
+      case "pendencias":
+        toast.info("Cobrança enviada ao cliente");
+        break;
+      case "prontos":
+        toast.info("Função de faturamento em desenvolvimento");
+        break;
     }
-    processarMutation.mutate();
+  };
+
+  const tabs = [
+    { id: "entrada", label: "Entrada", icon: Building2, action: "enviar" as const },
+    { id: "seguradora", label: "Seguradora", icon: Clock, action: "processar" as const },
+    { id: "pendencias", label: "Pendências", icon: AlertTriangle, action: "pendencia" as const },
+    { id: "reanalise", label: "Reanálise", icon: RefreshCw, action: "processar" as const },
+    { id: "prontos", label: "Prontos", icon: CheckCircle2, action: "faturar" as const },
+  ];
+
+  const getTabTitle = (tabId: string) => {
+    switch (tabId) {
+      case "entrada":
+        return "Novos Lotes para Processar";
+      case "seguradora":
+        return "Novos em Análise na Seguradora";
+      case "reanalise":
+        return "Correções em Reanálise";
+      case "pendencias":
+        return "Aguardando Correção do Cliente";
+      case "prontos":
+        return "Prontos para Faturamento";
+      default:
+        return "";
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Processar Retorno da Seguradora</DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {empresaNome} - {competencia}
-          </p>
-        </DialogHeader>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <Building2 className="h-8 w-8" />
+          Operacional
+        </h1>
+        <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
+      </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-blue-50 p-3 rounded-md border border-blue-100 text-sm text-blue-700">
-              <p>
-                Marque abaixo <strong>apenas</strong> os colaboradores REPROVADOS. Os desmarcados serão considerados{" "}
-                <strong>APROVADOS</strong>.
-              </p>
-            </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-5">
+          {tabs.map((tab) => {
+            const count = getLotesByTab(tab.id).length;
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger key={tab.id} value={tab.id} className="flex items-center gap-2">
+                <Icon className="h-4 w-4" />
+                {tab.label}
+                <span
+                  className={`ml-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    count > 0
+                      ? tab.id === "pendencias"
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {count}
+                </span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
 
-            {reprovados.size > 0 && (
-              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border">
-                <Input
-                  placeholder="Motivo em lote (ex: Data de nascimento divergente)"
-                  value={motivoEmLote}
-                  onChange={(e) => setMotivoEmLote(e.target.value)}
-                  className="flex-1 h-9"
+        {tabs.map((tab) => (
+          <TabsContent key={tab.id} value={tab.id}>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <tab.icon className="h-5 w-5 text-muted-foreground" />
+                  {getTabTitle(tab.id)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LotesTable
+                  lotes={getPaginatedLotes(tab.id)}
+                  isLoading={isLoading}
+                  currentPage={currentPages[tab.id] || 1}
+                  totalPages={getTotalPages(tab.id)}
+                  onPageChange={(page) => setCurrentPages((prev) => ({ ...prev, [tab.id]: page }))}
+                  actionType={tab.action}
+                  onAction={(lote) => handleAction(lote, tab.id)}
+                  actionLoading={enviarLoading}
                 />
-                <Button type="button" variant="secondary" size="sm" onClick={aplicarMotivoEmLote} className="shrink-0">
-                  <Copy className="h-4 w-4 mr-1" />
-                  Aplicar a todos
-                </Button>
-              </div>
-            )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
 
-            <div className="border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12 text-center">Reprovar</TableHead>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Motivo da Reprovação</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {colaboradores?.map((colab) => (
-                    <TableRow key={colab.id} className={reprovados.has(colab.id) ? "bg-red-50" : ""}>
-                      <TableCell className="text-center">
-                        <Checkbox
-                          checked={reprovados.has(colab.id)}
-                          onCheckedChange={(checked) => toggleReprovado(colab.id, checked as boolean)}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium">{colab.nome}</TableCell>
-                      <TableCell>{colab.cpf}</TableCell>
-                      <TableCell>
-                        {reprovados.has(colab.id) ? (
-                          <Input
-                            placeholder="Descreva o motivo..."
-                            value={reprovados.get(colab.id)?.motivo || ""}
-                            onChange={(e) => updateMotivo(colab.id, e.target.value)}
-                            className="h-8 border-red-200 focus-visible:ring-red-500"
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="text-xs text-green-600 font-medium flex items-center">
-                            <CheckCircle className="w-3 h-3 mr-1" /> Aprovado
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex items-center justify-between text-sm border-t pt-4">
-              <span>
-                Total: <strong>{colaboradores?.length || 0}</strong> colaboradores
-              </span>
-              <div className="flex gap-4">
-                <span className="text-green-600 font-bold">
-                  {colaboradores ? colaboradores.length - reprovados.size : 0} Aprovados
-                </span>
-                <span className={reprovados.size > 0 ? "text-destructive font-bold" : "text-muted-foreground"}>
-                  {reprovados.size} Reprovados
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleProcessar}
-            disabled={processarMutation.isPending || isLoading}
-            className={reprovados.size === 0 ? "bg-green-600 hover:bg-green-700" : "bg-primary"}
-          >
-            {processarMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {reprovados.size === 0 ? "Aprovar Todo o Lote" : "Confirmar Processamento"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Ícone auxiliar para o badge de aprovado
-function CheckCircle({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
+      {selectedLote && (
+        <ProcessarRetornoDialog
+          open={processarDialogOpen}
+          onOpenChange={setProcessarDialogOpen}
+          loteId={selectedLote.id}
+          empresaNome={selectedLote.empresa?.nome || ""}
+          competencia={selectedLote.competencia}
+        />
+      )}
+    </div>
   );
 }
