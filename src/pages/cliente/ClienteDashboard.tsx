@@ -510,12 +510,30 @@ const ClienteDashboard = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Última Fatura</CardTitle>
+            <CardTitle className="text-sm font-medium">Fatura do Mês</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(ultimaFatura?.valor_total ?? null)}</div>
-            <p className="text-xs text-muted-foreground">{ultimaFatura?.competencia || "Sem faturas"}</p>
+            {(() => {
+              const loteFaturado = lotesAtuais?.find(l => l.status === 'faturado');
+              if (loteFaturado) {
+                return (
+                  <>
+                    <div className="text-2xl font-bold">{formatCurrency(loteFaturado.valor_total ?? null)}</div>
+                    <p className="text-xs text-muted-foreground">{competenciaAtualCapitalized}</p>
+                  </>
+                );
+              }
+              return (
+                <>
+                  <div className="text-2xl font-bold text-muted-foreground">R$ 0,00</div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground">{competenciaAtualCapitalized}</p>
+                    <Badge variant="secondary" className="text-xs">Em fechamento</Badge>
+                  </div>
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
 
