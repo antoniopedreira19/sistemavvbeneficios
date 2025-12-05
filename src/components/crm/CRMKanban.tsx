@@ -11,6 +11,7 @@ import {
   Calendar,
   User,
   Mail,
+  Phone,
   PhoneMissed,
   MessageSquare,
   FileSignature,
@@ -19,49 +20,48 @@ import {
   PartyPopper,
   ChevronLeft,
   ChevronRight,
-  Building,
+  Building2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
-// Configuração Visual Rica das Colunas
+// Cores mais vivas e profissionais para as colunas
 const COLUMNS = {
   sem_retorno: {
     title: "Sem Retorno",
-    color: "border-slate-300 bg-slate-50",
-    headerColor: "text-slate-700",
+    color: "border-slate-200 bg-slate-50/50",
+    headerColor: "text-slate-600 bg-slate-100",
     icon: PhoneMissed,
   },
   tratativa: {
     title: "Em Tratativa",
-    color: "border-blue-300 bg-blue-50",
-    headerColor: "text-blue-700",
+    color: "border-blue-200 bg-blue-50/50",
+    headerColor: "text-blue-600 bg-blue-100",
     icon: MessageSquare,
   },
   contrato_assinado: {
     title: "Contrato Assinado",
-    color: "border-purple-300 bg-purple-50",
-    headerColor: "text-purple-700",
+    color: "border-purple-200 bg-purple-50/50",
+    headerColor: "text-purple-600 bg-purple-100",
     icon: FileSignature,
   },
   apolices_emitida: {
     title: "Apólices Emitidas",
-    color: "border-indigo-300 bg-indigo-50",
-    headerColor: "text-indigo-700",
+    color: "border-indigo-200 bg-indigo-50/50",
+    headerColor: "text-indigo-600 bg-indigo-100",
     icon: ShieldCheck,
   },
   acolhimento: {
     title: "Acolhimento",
-    color: "border-orange-300 bg-orange-50",
-    headerColor: "text-orange-700",
+    color: "border-orange-200 bg-orange-50/50",
+    headerColor: "text-orange-600 bg-orange-100",
     icon: Handshake,
   },
-  // Nova Coluna Final
   empresa_ativa: {
     title: "Ativar Cliente",
-    color: "border-green-400 bg-green-50/80 dashed border-2", // Visual diferente para indicar "Final"
-    headerColor: "text-green-700",
+    color: "border-green-300 bg-green-50/80 dashed border-2",
+    headerColor: "text-green-700 bg-green-100",
     icon: PartyPopper,
   },
 };
@@ -81,14 +81,14 @@ export function CRMKanban() {
     };
   }, []);
 
-  // Busca empresas
-  const { data: empresas, isLoading } = useQuery({
+  // Busca inicial
+  const { data: empresas = [], isLoading } = useQuery({
     queryKey: ["crm-empresas"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("empresas")
         .select("*")
-        .eq("status", "em_implementacao") // Traz apenas quem está no CRM
+        .eq("status", "em_implementacao")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -96,32 +96,45 @@ export function CRMKanban() {
     },
   });
 
-  // Mutação: Mover Card (Apenas troca de coluna no CRM)
+  // Mutação com Optimistic UI (Zero Piscada)
   const moveCardMutation = useMutation({
     mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
       const { error } = await supabase.from("empresas").update({ status_crm: newStatus }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["crm-empresas"] }),
-    onError: () => toast.error("Erro ao mover empresa"),
+    // O segredo está aqui: Atualizamos o cache ANTES do servidor responder
+    onMutate: async ({ id, newStatus }) => {
+      await queryClient.cancelQueries({ queryKey: ["crm-empresas"] });
+      const previousEmpresas = queryClient.getQueryData(["crm-empresas"]);
+
+      queryClient.setQueryData(["crm-empresas"], (old: any[]) => {
+        return old.map((empresa) => (empresa.id === id ? { ...empresa, status_crm: newStatus } : empresa));
+      });
+
+      return { previousEmpresas };
+    },
+    onError: (err, newTodo, context: any) => {
+      // Se der erro, volta como estava
+      queryClient.setQueryData(["crm-empresas"], context.previousEmpresas);
+      toast.error("Erro ao mover empresa");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+    },
   });
 
-  // Mutação: ATIVAR EMPRESA (Drop na última coluna)
   const ativarEmpresaMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("empresas")
-        .update({
-          status: "ativa",
-          status_crm: "empresa_ativa",
-        })
+        .update({ status: "ativa", status_crm: "empresa_ativa" })
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
-      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] }); // Atualiza a aba de lista
-      toast.success("Empresa ativada! Movida para carteira de clientes.");
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      toast.success("Empresa ativada com sucesso!");
     },
     onError: () => toast.error("Erro ao ativar empresa"),
   });
@@ -130,28 +143,27 @@ export function CRMKanban() {
     if (!result.destination) return;
     const { draggableId, destination, source } = result;
 
-    // Se soltou no mesmo lugar, não faz nada
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
-    // LÓGICA DE DROP:
-    // Se soltou na coluna "empresa_ativa", ativamos a empresa.
     if (destination.droppableId === "empresa_ativa") {
       ativarEmpresaMutation.mutate(draggableId);
     } else {
-      // Caso contrário, apenas move dentro do CRM
       moveCardMutation.mutate({ id: draggableId, newStatus: destination.droppableId });
     }
   };
 
-  // Funções de Scroll Manual
   const scroll = (direction: "left" | "right") => {
     if (scrollContainerRef.current) {
-      const scrollAmount = 340; // Largura da coluna + gap
+      const scrollAmount = 340;
       scrollContainerRef.current.scrollBy({
         left: direction === "left" ? -scrollAmount : scrollAmount,
         behavior: "smooth",
       });
     }
+  };
+
+  const formatCNPJ = (value: string) => {
+    return value.replace(/\D/g, "").replace(/^(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, "$1.$2.$3/$4-$5");
   };
 
   if (isLoading)
@@ -164,53 +176,42 @@ export function CRMKanban() {
 
   const columnsList = Object.keys(COLUMNS) as CRMStatus[];
 
-  // Agrupamento
   const groupedData = columnsList.reduce(
     (acc, col) => {
-      // Filtra empresas para cada coluna.
-      // Nota: A coluna 'empresa_ativa' sempre estará vazia na renderização inicial
-      // pois o filtro da query pega apenas 'em_implementacao'.
-      // Ela serve apenas como Zona de Drop.
-      acc[col] = empresas?.filter((e) => (e.status_crm || "sem_retorno") === col) || [];
+      acc[col] = empresas.filter((e: any) => (e.status_crm || "sem_retorno") === col);
       return acc;
     },
-    {} as Record<CRMStatus, typeof empresas>,
+    {} as Record<CRMStatus, any[]>,
   );
 
   return (
     <div className="relative h-[calc(100vh-220px)] w-full group">
-      {/* Botão Scroll Esquerda */}
+      {/* Botões de Navegação (Scroll) */}
       <Button
         variant="secondary"
         size="icon"
-        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 shadow-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white"
+        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 shadow-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white border"
         onClick={() => scroll("left")}
       >
         <ChevronLeft className="h-6 w-6 text-slate-700" />
       </Button>
 
-      {/* Botão Scroll Direita */}
       <Button
         variant="secondary"
         size="icon"
-        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 shadow-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white"
+        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 shadow-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white border"
         onClick={() => scroll("right")}
       >
         <ChevronRight className="h-6 w-6 text-slate-700" />
       </Button>
 
-      {/* Container do Kanban (Scroll Hidden) */}
       <div
         ref={scrollContainerRef}
         className="h-full overflow-x-auto pb-4 px-1"
-        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }} // Esconde scrollbar nativa
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
-        <style>{`
-          .hide-scrollbar::-webkit-scrollbar { display: none; }
-        `}</style>
-
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="flex gap-4 min-w-max h-full hide-scrollbar">
+          <div className="flex gap-4 min-w-max h-full">
             {columnsList.map((columnId) => {
               const colConfig = COLUMNS[columnId];
               const Icon = colConfig.icon;
@@ -220,15 +221,13 @@ export function CRMKanban() {
                 <div key={columnId} className="w-[340px] shrink-0 flex flex-col h-full">
                   {/* Header da Coluna */}
                   <div
-                    className={`p-4 rounded-t-xl border-b-2 flex justify-between items-center bg-white shadow-sm mb-2 ${colConfig.color.replace("bg-", "border-b-").split(" ")[0]}`}
+                    className={`p-4 rounded-t-xl border-b flex justify-between items-center bg-white shadow-sm mb-3 ${colConfig.color.replace("bg-", "border-")}`}
                   >
                     <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded-md ${colConfig.color.split(" ")[1]}`}>
-                        <Icon className={`h-4 w-4 ${colConfig.headerColor}`} />
+                      <div className={`p-1.5 rounded-md ${colConfig.headerColor}`}>
+                        <Icon className="h-4 w-4" />
                       </div>
-                      <h3 className={`font-bold text-sm uppercase tracking-wide ${colConfig.headerColor}`}>
-                        {colConfig.title}
-                      </h3>
+                      <h3 className={`font-bold text-sm uppercase tracking-wide text-slate-700`}>{colConfig.title}</h3>
                     </div>
                     {!isFinalColumn && (
                       <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-mono">
@@ -244,17 +243,19 @@ export function CRMKanban() {
                         {...provided.droppableProps}
                         ref={provided.innerRef}
                         className={`
-                          flex-1 p-2 rounded-xl border space-y-3 transition-all duration-200 overflow-y-auto
+                          flex-1 p-2 rounded-xl border transition-all duration-200 overflow-y-auto
                           ${colConfig.color}
                           ${snapshot.isDraggingOver ? "ring-2 ring-primary/50 bg-white/50" : ""}
-                          ${isFinalColumn ? "flex items-center justify-center opacity-70 hover:opacity-100" : ""}
+                          ${isFinalColumn ? "flex items-center justify-center opacity-90 hover:opacity-100 cursor-pointer" : ""}
                         `}
                       >
-                        {/* Conteúdo Especial para Coluna Ativa */}
+                        {/* Drop Zone para Ativação */}
                         {isFinalColumn ? (
-                          <div className="text-center text-green-600 p-4 border-2 border-dashed border-green-300 rounded-xl bg-green-50/50 w-full h-[150px] flex flex-col items-center justify-center gap-2">
-                            <PartyPopper className="h-8 w-8 animate-bounce" />
-                            <span className="text-sm font-medium">Solte aqui para Ativar</span>
+                          <div className="text-center text-green-700 p-6 border-2 border-dashed border-green-400 rounded-xl bg-green-50 w-full h-full flex flex-col items-center justify-center gap-3">
+                            <div className="bg-green-100 p-3 rounded-full">
+                              <PartyPopper className="h-8 w-8 text-green-600 animate-pulse" />
+                            </div>
+                            <span className="text-sm font-medium">Solte aqui para Ativar o Cliente</span>
                           </div>
                         ) : (
                           // Cards Normais
@@ -266,66 +267,84 @@ export function CRMKanban() {
                                   {...provided.draggableProps}
                                   {...provided.dragHandleProps}
                                   className={`
-                                    cursor-grab active:cursor-grabbing border-l-4 transition-all duration-200 group
-                                    hover:shadow-lg hover:-translate-y-1
-                                    ${snapshot.isDragging ? "shadow-2xl ring-2 ring-primary rotate-2 scale-105 z-50" : "shadow-sm"}
-                                    ${colConfig.color.split(" ")[0]}
+                                    cursor-grab active:cursor-grabbing border-none shadow-sm transition-all duration-200 group relative
+                                    hover:shadow-md hover:-translate-y-0.5
+                                    ${snapshot.isDragging ? "shadow-2xl ring-2 ring-primary rotate-2 scale-105 z-50" : "bg-white"}
                                   `}
                                 >
-                                  <CardContent className="p-4 space-y-3">
-                                    {/* Header do Card */}
-                                    <div className="flex justify-between items-start gap-3">
+                                  <CardContent className="p-4 space-y-4">
+                                    {/* Topo: Nome e Responsável */}
+                                    <div className="flex items-start justify-between gap-3">
                                       <div className="flex items-center gap-3">
-                                        <Avatar className="h-8 w-8 border border-slate-200">
-                                          <AvatarFallback
-                                            className={`text-xs font-bold ${colConfig.headerColor.replace("text-", "bg-").replace("700", "100")}`}
-                                          >
+                                        <Avatar className="h-9 w-9 border border-slate-100">
+                                          <AvatarFallback className={`text-xs font-bold ${colConfig.headerColor}`}>
                                             {empresa.nome.substring(0, 2).toUpperCase()}
                                           </AvatarFallback>
                                         </Avatar>
-                                        <div>
-                                          <span className="font-semibold text-sm line-clamp-1 text-slate-800">
+                                        <div className="space-y-0.5">
+                                          <span
+                                            className="font-semibold text-sm line-clamp-1 text-slate-900"
+                                            title={empresa.nome}
+                                          >
                                             {empresa.nome}
                                           </span>
-                                          <span className="text-[10px] text-slate-500 font-mono">
-                                            {empresa.cnpj.slice(0, 14)}...
-                                          </span>
+                                          {empresa.nome_responsavel && (
+                                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                              <User className="h-3 w-3" />
+                                              {empresa.nome_responsavel}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
+
+                                      {/* Botão de Ativar atalho (na última coluna) */}
+                                      {columnId === "acolhimento" && (
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-50 -mt-1 -mr-2"
+                                          title="Finalizar e Ativar"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            ativarEmpresaMutation.mutate(empresa.id);
+                                          }}
+                                        >
+                                          <ArrowRight className="h-4 w-4" />
+                                        </Button>
+                                      )}
                                     </div>
 
-                                    {/* Dados de Contato */}
-                                    <div className="space-y-1.5 pt-1 bg-white/50 p-2 rounded-md">
+                                    {/* Info de Contato (Email / Telefone) */}
+                                    <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
                                       <div className="flex items-center gap-2 text-xs text-slate-600">
-                                        <User className="h-3 w-3 shrink-0 text-slate-400" />
-                                        <span className="truncate">
-                                          {empresa.nome_responsavel || "Sem responsável"}
-                                        </span>
+                                        <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                        <span className="truncate font-mono">{formatCNPJ(empresa.cnpj)}</span>
                                       </div>
-                                      <div className="flex items-center gap-2 text-xs text-slate-600">
-                                        <Mail className="h-3 w-3 shrink-0 text-slate-400" />
-                                        <span className="truncate">{empresa.email_contato || "Sem email"}</span>
-                                      </div>
+
+                                      {empresa.email_contato && (
+                                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                                          <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                          <span className="truncate" title={empresa.email_contato}>
+                                            {empresa.email_contato}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {empresa.telefone_contato && (
+                                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                                          <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                          <span className="truncate">{empresa.telefone_contato}</span>
+                                        </div>
+                                      )}
                                     </div>
 
-                                    {/* Footer do Card */}
-                                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[10px] font-normal bg-white text-slate-500 border-slate-200"
-                                      >
-                                        <Building className="h-3 w-3 mr-1" />
-                                        Obra Civil
-                                      </Badge>
-
-                                      <div
-                                        className="flex items-center gap-1 text-[10px] text-slate-400 font-medium"
-                                        title="Tempo no funil"
-                                      >
+                                    {/* Footer: Data e Status */}
+                                    <div className="flex items-center justify-between pt-1">
+                                      <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium bg-white px-2 py-1 rounded-full border border-slate-100">
                                         <Calendar className="h-3 w-3" />
                                         {formatDistanceToNow(new Date(empresa.created_at), {
                                           locale: ptBR,
-                                          addSuffix: false,
+                                          addSuffix: true,
                                         })}
                                       </div>
                                     </div>
