@@ -26,7 +26,7 @@ export default function AdminEmpresas() {
           </TabsTrigger>
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <KanbanSquare className="h-4 w-4" />
-            Funil CRM
+            CRM
           </TabsTrigger>
         </TabsList>
 
