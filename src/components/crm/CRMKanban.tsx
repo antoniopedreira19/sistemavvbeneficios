@@ -2,13 +2,10 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Calendar, User, Mail, ArrowRight, Building2, Phone } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { User, Mail, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
@@ -22,92 +19,69 @@ const CRM_COLUMNS = [
   { id: "empresa_ativa", title: "Empresa Ativa", color: "bg-green-500" },
 ];
 
+const formatCNPJ = (val: string) =>
+  val?.replace(/\D/g, "").replace(/^(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, "$1.$2.$3/$4-$5") || "";
+
+const formatPhone = (val: string) => {
+  if (!val) return null;
+  const digits = val.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return val;
+};
+
+const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "??";
+
 interface KanbanCardProps {
   empresa: EmpresaCRM;
-  index: number;
   onClick: () => void;
 }
 
-function KanbanCard({ empresa, index, onClick }: KanbanCardProps) {
-  const formatCNPJ = (val: string) =>
-    val.replace(/\D/g, "").replace(/^(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, "$1.$2.$3/$4-$5");
-  const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
-
+function KanbanCard({ empresa, onClick }: KanbanCardProps) {
   return (
-    <Draggable draggableId={empresa.id} index={index}>
-      {(provided, snapshot) => (
-        <div
-          ref={provided.innerRef}
-          {...provided.draggableProps}
-          {...provided.dragHandleProps}
-          onClick={onClick}
-          className="mb-3"
-        >
-          <Card
-            className={`
-              bg-card border-l-4 border-l-primary/30 cursor-grab
-              ${snapshot.isDragging ? "shadow-xl ring-2 ring-primary/50" : "shadow-sm hover:shadow-md"}
-            `}
-            style={{
-              transform: snapshot.isDragging ? undefined : "none",
-            }}
-          >
-            <CardContent className="p-4 space-y-3">
-              {/* Header */}
-              <div className="flex justify-between items-start gap-3">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9 border border-border">
-                    <AvatarFallback className="bg-muted text-muted-foreground text-xs font-bold">
-                      {getInitials(empresa.nome)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="space-y-0.5">
-                    <span className="font-semibold text-sm line-clamp-1 text-foreground leading-tight">
-                      {empresa.nome}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-mono block">
-                      {formatCNPJ(empresa.cnpj)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Contatos */}
-              <div className="space-y-1.5 pt-1 bg-muted/50 p-2 rounded-md border border-border/50">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <User className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{empresa.nome_responsavel || "Sem responsável"}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Mail className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{empresa.email_contato || "Sem email"}</span>
-                </div>
-                {empresa.telefone_contato && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Phone className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{empresa.telefone_contato}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="pt-2 border-t border-border flex items-center justify-between">
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 font-normal bg-background text-muted-foreground border-border gap-1 px-1.5"
-                >
-                  <Building2 className="h-3 w-3" /> Lead
-                </Badge>
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                  <Calendar className="h-3 w-3" />
-                  {formatDistanceToNow(new Date(empresa.created_at), { locale: ptBR, addSuffix: false })}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+    <Card
+      onClick={onClick}
+      className="p-3 bg-card border shadow-sm cursor-pointer select-none"
+    >
+      {/* Header: Avatar + Nome + CNPJ */}
+      <div className="flex items-center gap-2 mb-2">
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+            {getInitials(empresa.nome)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-sm text-foreground truncate leading-tight">
+            {empresa.nome}
+          </p>
+          <p className="text-[10px] text-muted-foreground font-mono">
+            {formatCNPJ(empresa.cnpj)}
+          </p>
         </div>
-      )}
-    </Draggable>
+      </div>
+
+      {/* Info rows */}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 truncate">
+          <User className="h-3 w-3 shrink-0" />
+          <span className="truncate">{empresa.nome_responsavel || "Sem responsável"}</span>
+        </div>
+        <div className="flex items-center gap-1.5 truncate">
+          <Mail className="h-3 w-3 shrink-0" />
+          <span className="truncate">{empresa.email_contato?.toLowerCase() || "Sem email"}</span>
+        </div>
+        {empresa.telefone_contato && (
+          <div className="flex items-center gap-1.5 truncate">
+            <Phone className="h-3 w-3 shrink-0" />
+            <span className="truncate">{formatPhone(empresa.telefone_contato)}</span>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -134,11 +108,9 @@ export function CRMKanban() {
       const { error } = await supabase.from("empresas").update({ status_crm }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
-      toast.success("Status atualizado com sucesso!");
-    },
     onError: () => {
+      // Revert on error
+      queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
       toast.error("Erro ao atualizar status");
     },
   });
@@ -149,7 +121,15 @@ export function CRMKanban() {
     if (!destination) return;
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
-    // Update status in database
+    // Optimistic update - update cache immediately
+    queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
+      if (!old) return old;
+      return old.map((e) =>
+        e.id === draggableId ? { ...e, status_crm: destination.droppableId } : e
+      );
+    });
+
+    // Fire mutation without waiting
     updateStatusMutation.mutate({
       id: draggableId,
       status_crm: destination.droppableId,
@@ -164,11 +144,11 @@ export function CRMKanban() {
     return (
       <div className="flex gap-4 overflow-x-auto pb-4">
         {CRM_COLUMNS.map((col) => (
-          <div key={col.id} className="min-w-[300px] bg-muted/30 rounded-lg p-4 animate-pulse">
-            <div className="h-6 bg-muted rounded w-24 mb-4" />
-            <div className="space-y-3">
-              <div className="h-32 bg-muted rounded" />
-              <div className="h-32 bg-muted rounded" />
+          <div key={col.id} className="min-w-[280px] bg-muted/30 rounded-lg p-3 animate-pulse">
+            <div className="h-5 bg-muted rounded w-24 mb-3" />
+            <div className="space-y-2">
+              <div className="h-24 bg-muted rounded" />
+              <div className="h-24 bg-muted rounded" />
             </div>
           </div>
         ))}
@@ -179,41 +159,60 @@ export function CRMKanban() {
   return (
     <>
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div className="flex gap-3 overflow-x-auto pb-4">
           {CRM_COLUMNS.map((column) => {
             const columnEmpresas = getColumnEmpresas(column.id);
             return (
-              <div key={column.id} className="min-w-[300px] flex-shrink-0">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className={`w-3 h-3 rounded-full ${column.color}`} />
-                  <h3 className="font-semibold text-sm text-foreground">{column.title}</h3>
-                  <Badge variant="secondary" className="ml-auto text-xs">
+              <div key={column.id} className="min-w-[280px] w-[280px] flex-shrink-0">
+                {/* Column Header */}
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <div className={`w-2.5 h-2.5 rounded-full ${column.color}`} />
+                  <h3 className="font-medium text-sm text-foreground">{column.title}</h3>
+                  <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5">
                     {columnEmpresas.length}
                   </Badge>
                 </div>
+
+                {/* Droppable Area */}
                 <Droppable droppableId={column.id}>
                   {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       className={`
-                        min-h-[500px] p-3 rounded-lg border border-border
-                        ${snapshot.isDraggingOver ? "bg-primary/5 border-primary/30" : "bg-muted/30"}
+                        min-h-[400px] p-2 rounded-lg border
+                        ${snapshot.isDraggingOver 
+                          ? "bg-primary/5 border-primary/30" 
+                          : "bg-muted/20 border-border/50"}
                       `}
                     >
-                      {columnEmpresas.map((empresa, index) => (
-                        <KanbanCard
-                          key={empresa.id}
-                          empresa={empresa}
-                          index={index}
-                          onClick={() => setSelectedEmpresa(empresa)}
-                        />
-                      ))}
+                      <div className="space-y-2">
+                        {columnEmpresas.map((empresa, index) => (
+                          <Draggable key={empresa.id} draggableId={empresa.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{
+                                  ...provided.draggableProps.style,
+                                  opacity: snapshot.isDragging ? 0.9 : 1,
+                                }}
+                              >
+                                <KanbanCard
+                                  empresa={empresa}
+                                  onClick={() => !snapshot.isDragging && setSelectedEmpresa(empresa)}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                      </div>
                       {provided.placeholder}
-                      {columnEmpresas.length === 0 && (
-                        <div className="text-center text-muted-foreground text-sm py-8">
+                      {columnEmpresas.length === 0 && !snapshot.isDraggingOver && (
+                        <p className="text-center text-muted-foreground text-xs py-8">
                           Nenhuma empresa
-                        </div>
+                        </p>
                       )}
                     </div>
                   )}
@@ -230,6 +229,12 @@ export function CRMKanban() {
         onOpenChange={(open) => !open && setSelectedEmpresa(null)}
         statusLabels={CRM_STATUS_LABELS}
         onUpdateStatus={(empresaId, newStatus) => {
+          queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
+            if (!old) return old;
+            return old.map((e) =>
+              e.id === empresaId ? { ...e, status_crm: newStatus } : e
+            );
+          });
           updateStatusMutation.mutate({ id: empresaId, status_crm: newStatus });
         }}
         onEmpresaUpdated={() => {
