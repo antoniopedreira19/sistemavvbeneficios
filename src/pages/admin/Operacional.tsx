@@ -181,7 +181,7 @@ export default function Operacional() {
     } else if (tab === "concluido") {
       setConfirmFaturarDialog(true);
     } else if (tab === "pendencia") {
-      toast.info("Aguardando correção do cliente...");
+      toast.success("Mensagem de cobrança enviada.");
     }
   };
 
