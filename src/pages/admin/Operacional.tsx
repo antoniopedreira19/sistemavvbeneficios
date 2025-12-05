@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Briefcase, Inbox, Clock, AlertTriangle, CheckCircle, RotateCcw } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2, Inbox } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,89 +16,93 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 
 const ITEMS_PER_PAGE = 10;
 
-type TabType = "entrada" | "seguradora" | "pendencia" | "reanalise" | "concluido";
+// Tipagem exata das abas visuais
+type TabType = "entrada" | "seguradora" | "pendencias" | "reanalise" | "prontos";
 
-const Operacional = () => {
+export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
-  const [pages, setPages] = useState<Record<TabType, number>>({
+  const [currentPages, setCurrentPages] = useState<Record<string, number>>({
     entrada: 1,
     seguradora: 1,
-    pendencia: 1,
+    pendencias: 1,
     reanalise: 1,
-    concluido: 1,
+    prontos: 1,
   });
 
-  const [confirmEnviarDialog, setConfirmEnviarDialog] = useState<LoteOperacional | null>(null);
-  const [confirmFaturarDialog, setConfirmFaturarDialog] = useState<LoteOperacional | null>(null);
-  const [processarRetornoDialog, setProcessarRetornoDialog] = useState<LoteOperacional | null>(null);
+  // Dialogs States
+  const [selectedLote, setSelectedLote] = useState<LoteOperacional | null>(null);
+  const [confirmEnviarDialog, setConfirmEnviarDialog] = useState(false);
+  const [confirmFaturarDialog, setConfirmFaturarDialog] = useState(false);
+  const [processarDialogOpen, setProcessarDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // --- QUERY INTELIGENTE ---
-  const fetchLotes = async (tab: TabType) => {
-    let query = supabase.from("lotes_mensais").select(
-      `
-        id, competencia, total_colaboradores, total_reprovados, valor_total, created_at, status, 
-        empresa:empresas(nome),
-        obra:obras(nome)
-      `,
-      { count: "exact" },
-    );
+  const { data: lotes = [], isLoading } = useQuery({
+    queryKey: ["lotes-operacional"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lotes_mensais")
+        .select(
+          `
+          id, competencia, total_colaboradores, total_reprovados, valor_total, created_at, status,
+          empresa:empresas(nome),
+          obra:obras(nome)
+        `,
+        )
+        // Buscamos todos os status relevantes para o dashboard
+        .in("status", [
+          "aguardando_processamento",
+          "em_analise_seguradora",
+          "com_pendencia",
+          "aguardando_reanalise",
+          "em_reanalise",
+          "concluido",
+        ])
+        .order("created_at", { ascending: false });
 
+      if (error) throw error;
+      return data as LoteOperacional[];
+    },
+  });
+
+  // --- FILTRAGEM RÍGIDA (A Lógica do Túnel) ---
+  const getLotesByTab = (tab: TabType) => {
     switch (tab) {
       case "entrada":
-        // Filtra APENAS novos (aguardando_processamento).
-        // Lotes corrigidos agora usam outro status, então não se misturam.
-        query = query.eq("status", "aguardando_processamento");
-        break;
+        // Apenas Lotes Novos (Nunca passaram por reprovação ou reanálise)
+        return lotes.filter((l) => l.status === "aguardando_processamento");
+
       case "seguradora":
-        // Filtra APENAS novos na seguradora
-        query = query.eq("status", "em_analise_seguradora");
-        break;
-      case "pendencia":
-        query = query.eq("status", "com_pendencia");
-        break;
+        // Apenas Lotes Novos na Seguradora
+        return lotes.filter((l) => l.status === "em_analise_seguradora");
+
+      case "pendencias":
+        // Lotes travados com o cliente
+        return lotes.filter((l) => l.status === "com_pendencia");
+
       case "reanalise":
-        // Pega o ciclo de reanálise inteiro (Chegada do Cliente + Envio 2ª via)
-        query = query.in("status", ["aguardando_reanalise", "em_reanalise"]);
-        break;
-      case "concluido":
-        query = query.eq("status", "concluido");
-        break;
+        // O Ciclo de Correção:
+        // 1. aguardando_reanalise (Cliente mandou)
+        // 2. em_reanalise (Admin mandou pra seguradora de novo)
+        return lotes.filter((l) => ["aguardando_reanalise", "em_reanalise"].includes(l.status));
+
+      case "prontos":
+        return lotes.filter((l) => l.status === "concluido");
+
+      default:
+        return [];
     }
-
-    query = query
-      .order("created_at", { ascending: false })
-      .range((pages[tab] - 1) * ITEMS_PER_PAGE, pages[tab] * ITEMS_PER_PAGE - 1);
-
-    const { data, error, count } = await query;
-    if (error) throw error;
-    // Cast forçado para aceitar os novos status do TS se ainda não tiverem atualizados no type global
-    return { data: data as unknown as LoteOperacional[], count: count || 0 };
   };
 
-  // Queries
-  const tabs: TabType[] = ["entrada", "seguradora", "pendencia", "reanalise", "concluido"];
-  const queries = tabs.reduce(
-    (acc, tab) => {
-      acc[tab] = useQuery({
-        queryKey: ["lotes", tab, pages[tab]],
-        queryFn: () => fetchLotes(tab),
-      });
-      return acc;
-    },
-    {} as Record<TabType, any>,
-  );
+  // --- MUTAÇÕES ---
 
-  // --- MUTATIONS ---
-
-  // 1. Enviar Lote Novo (Entrada -> Seguradora)
+  // 1. Enviar Lote NOVO (Entrada -> Seguradora)
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -108,9 +113,9 @@ const Operacional = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lotes"] });
-      toast.success("Lote enviado para seguradora!");
-      setConfirmEnviarDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
+      toast.success("Enviado para Seguradora (Novo)");
+      setConfirmEnviarDialog(false);
       setActionLoading(null);
     },
     onError: (e: any) => {
@@ -119,7 +124,7 @@ const Operacional = () => {
     },
   });
 
-  // 2. Reenviar Lote Corrigido (Reanálise -> Em Reanálise)
+  // 2. Reenviar Lote CORRIGIDO (Reanálise -> Em Reanálise)
   const reenviarReanaliseMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -130,9 +135,9 @@ const Operacional = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lotes"] });
-      toast.success("Lote reenviado para análise (2ª via)!");
-      setConfirmEnviarDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
+      toast.success("Enviado para 2ª Análise (Reenvio)");
+      setConfirmEnviarDialog(false);
       setActionLoading(null);
     },
     onError: (e: any) => {
@@ -141,16 +146,17 @@ const Operacional = () => {
     },
   });
 
-  const liberarFaturamentoMutation = useMutation({
+  // 3. Faturar
+  const faturarMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
       const { error } = await supabase.from("lotes_mensais").update({ status: "faturado" }).eq("id", loteId);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lotes"] });
-      toast.success("Liberado para faturamento!");
-      setConfirmFaturarDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
+      toast.success("Lote faturado!");
+      setConfirmFaturarDialog(false);
       setActionLoading(null);
     },
     onError: (e: any) => {
@@ -159,147 +165,171 @@ const Operacional = () => {
     },
   });
 
+  // --- HANDLERS ---
+
   const handleAction = (lote: LoteOperacional, tab: string) => {
-    if (tab === "entrada") setConfirmEnviarDialog(lote); // Vai usar enviarNovo
+    setSelectedLote(lote);
 
-    // Na reanálise, depende do status interno
-    if (tab === "reanalise") {
+    if (tab === "entrada") {
+      setConfirmEnviarDialog(true); // Vai usar enviarNovo
+    } else if (tab === "reanalise") {
       if (lote.status === "aguardando_reanalise")
-        setConfirmEnviarDialog(lote); // Vai usar reenviarReanalise
-      else if (lote.status === "em_reanalise") setProcessarRetornoDialog(lote);
+        setConfirmEnviarDialog(true); // Vai usar reenviarReanalise
+      else if (lote.status === "em_reanalise") setProcessarDialogOpen(true);
+    } else if (tab === "seguradora") {
+      setProcessarDialogOpen(true);
+    } else if (tab === "prontos") {
+      setConfirmFaturarDialog(true);
+    } else if (tab === "pendencias") {
+      toast.info("Aguardando correção do cliente...");
     }
-
-    if (tab === "seguradora") setProcessarRetornoDialog(lote);
-    if (tab === "concluido") setConfirmFaturarDialog(lote);
-    if (tab === "pendencia") toast.info("Cobrança em breve");
   };
 
-  // Função Wrapper para decidir qual envio usar
   const handleConfirmarEnvio = () => {
-    if (!confirmEnviarDialog) return;
+    if (!selectedLote) return;
 
-    if (confirmEnviarDialog.status === "aguardando_reanalise") {
-      reenviarReanaliseMutation.mutate(confirmEnviarDialog.id);
+    if (selectedLote.status === "aguardando_reanalise") {
+      reenviarReanaliseMutation.mutate(selectedLote.id);
     } else {
-      enviarNovoMutation.mutate(confirmEnviarDialog.id);
+      enviarNovoMutation.mutate(selectedLote.id);
     }
   };
+
+  // Helper de Paginação
+  const getPaginatedLotes = (tab: TabType) => {
+    const data = getLotesByTab(tab);
+    const page = currentPages[tab] || 1;
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return data.slice(start, start + ITEMS_PER_PAGE);
+  };
+
+  const getTotalPages = (tab: TabType) => Math.ceil(getLotesByTab(tab).length / ITEMS_PER_PAGE);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Briefcase className="h-8 w-8 text-primary" />
+        <Building2 className="h-8 w-8 text-primary" />
         <div>
-          <h1 className="text-2xl font-bold">Operacional</h1>
+          <h1 className="text-3xl font-bold">Operacional</h1>
           <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
         <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="entrada" className="gap-2">
-            <Inbox className="h-4 w-4" /> Entrada
-            <Badge variant="secondary" className="ml-1">
-              {queries.entrada.data?.count || 0}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="seguradora" className="gap-2">
-            <Clock className="h-4 w-4" /> Seguradora
-            <Badge variant="secondary" className="ml-1">
-              {queries.seguradora.data?.count || 0}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="pendencia" className="gap-2">
-            <AlertTriangle className="h-4 w-4" /> Pendências
-            <Badge variant="destructive" className="ml-1">
-              {queries.pendencia.data?.count || 0}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="reanalise" className="gap-2">
-            <RotateCcw className="h-4 w-4" /> Reanálise
-            <Badge variant="outline" className="ml-1 bg-orange-100 text-orange-700 border-orange-200">
-              {queries.reanalise.data?.count || 0}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="concluido" className="gap-2">
-            <CheckCircle className="h-4 w-4" /> Prontos
-            <Badge variant="default" className="ml-1">
-              {queries.concluido.data?.count || 0}
-            </Badge>
-          </TabsTrigger>
+          <TabTriggerItem id="entrada" label="Entrada" icon={Inbox} count={getLotesByTab("entrada").length} />
+          <TabTriggerItem id="seguradora" label="Seguradora" icon={Clock} count={getLotesByTab("seguradora").length} />
+          <TabTriggerItem
+            id="pendencias"
+            label="Pendências"
+            icon={AlertTriangle}
+            count={getLotesByTab("pendencias").length}
+            variant="destructive"
+          />
+          <TabTriggerItem
+            id="reanalise"
+            label="Reanálise"
+            icon={RefreshCw}
+            count={getLotesByTab("reanalise").length}
+            variant="outline"
+          />
+          <TabTriggerItem
+            id="prontos"
+            label="Prontos"
+            icon={CheckCircle2}
+            count={getLotesByTab("prontos").length}
+            variant="default"
+          />
         </TabsList>
 
-        {/* Renderiza as abas */}
-        {renderTabContent(
-          "entrada",
-          "Entrada de Novos Lotes",
-          <Inbox className="text-blue-500" />,
-          queries,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "enviar",
-        )}
-        {renderTabContent(
-          "seguradora",
-          "Novos em Análise",
-          <Clock className="text-yellow-500" />,
-          queries,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "processar",
-        )}
-        {renderTabContent(
-          "pendencia",
-          "Aguardando Cliente",
-          <AlertTriangle className="text-red-500" />,
-          queries,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "pendencia",
-        )}
-        {renderTabContent(
-          "reanalise",
-          "Ciclo de Correção",
-          <RotateCcw className="text-orange-500" />,
-          queries,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "reanalise",
-        )}
-        {renderTabContent(
-          "concluido",
-          "Prontos para Faturamento",
-          <CheckCircle className="text-green-500" />,
-          queries,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "faturar",
-        )}
+        <TabsContent value="entrada" className="mt-6">
+          <TabCard title="Novos Lotes (Aguardando)" icon={Inbox} color="text-blue-500">
+            <LotesTable
+              lotes={getPaginatedLotes("entrada")}
+              isLoading={isLoading}
+              currentPage={currentPages.entrada}
+              totalPages={getTotalPages("entrada")}
+              onPageChange={(p) => setCurrentPages((prev) => ({ ...prev, entrada: p }))}
+              actionType="enviar"
+              onAction={(l) => handleAction(l, "entrada")}
+              actionLoading={actionLoading}
+            />
+          </TabCard>
+        </TabsContent>
+
+        <TabsContent value="seguradora" className="mt-6">
+          <TabCard title="Novos na Seguradora" icon={Clock} color="text-yellow-500">
+            <LotesTable
+              lotes={getPaginatedLotes("seguradora")}
+              isLoading={isLoading}
+              currentPage={currentPages.seguradora}
+              totalPages={getTotalPages("seguradora")}
+              onPageChange={(p) => setCurrentPages((prev) => ({ ...prev, seguradora: p }))}
+              actionType="processar"
+              onAction={(l) => handleAction(l, "seguradora")}
+              actionLoading={actionLoading}
+            />
+          </TabCard>
+        </TabsContent>
+
+        <TabsContent value="pendencias" className="mt-6">
+          <TabCard title="Aguardando Correção do Cliente" icon={AlertTriangle} color="text-red-500">
+            <LotesTable
+              lotes={getPaginatedLotes("pendencias")}
+              isLoading={isLoading}
+              currentPage={currentPages.pendencias}
+              totalPages={getTotalPages("pendencias")}
+              onPageChange={(p) => setCurrentPages((prev) => ({ ...prev, pendencias: p }))}
+              actionType="pendencia"
+              onAction={(l) => handleAction(l, "pendencias")}
+              actionLoading={actionLoading}
+            />
+          </TabCard>
+        </TabsContent>
+
+        <TabsContent value="reanalise" className="mt-6">
+          <TabCard title="Ciclo de Reanálise" icon={RefreshCw} color="text-orange-500">
+            <LotesTable
+              lotes={getPaginatedLotes("reanalise")}
+              isLoading={isLoading}
+              currentPage={currentPages.reanalise}
+              totalPages={getTotalPages("reanalise")}
+              onPageChange={(p) => setCurrentPages((prev) => ({ ...prev, reanalise: p }))}
+              // A tabela vai receber o tipo "reanalise" e decidir se mostra "Reenviar" ou "Processar"
+              actionType="reanalise"
+              onAction={(l) => handleAction(l, "reanalise")}
+              actionLoading={actionLoading}
+            />
+          </TabCard>
+        </TabsContent>
+
+        <TabsContent value="prontos" className="mt-6">
+          <TabCard title="Prontos para Faturamento" icon={CheckCircle2} color="text-green-500">
+            <LotesTable
+              lotes={getPaginatedLotes("prontos")}
+              isLoading={isLoading}
+              currentPage={currentPages.prontos}
+              totalPages={getTotalPages("prontos")}
+              onPageChange={(p) => setCurrentPages((prev) => ({ ...prev, prontos: p }))}
+              actionType="faturar"
+              onAction={(l) => handleAction(l, "prontos")}
+              actionLoading={actionLoading}
+            />
+          </TabCard>
+        </TabsContent>
       </Tabs>
 
-      {/* DIALOG DE ENVIO INTELIGENTE */}
-      <AlertDialog open={!!confirmEnviarDialog} onOpenChange={() => setConfirmEnviarDialog(null)}>
+      {/* DIALOG DE CONFIRMAÇÃO DE ENVIO */}
+      <AlertDialog open={confirmEnviarDialog} onOpenChange={setConfirmEnviarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmEnviarDialog?.status === "aguardando_reanalise"
-                ? "Reenviar para Seguradora?"
-                : "Enviar Novo Lote?"}
+              {selectedLote?.status === "aguardando_reanalise" ? "Reenviar Correção?" : "Enviar Novo Lote?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmEnviarDialog?.status === "aguardando_reanalise"
-                ? "Este lote contém correções. O status será atualizado para 'Em Reanálise'."
-                : "O lote será enviado para a fila 'Em Análise da Seguradora'."}
+              {selectedLote?.status === "aguardando_reanalise"
+                ? "O lote corrigido será enviado para a fila de 'Em Reanálise'."
+                : "O lote será enviado para análise inicial da seguradora."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -309,71 +339,53 @@ const Operacional = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!confirmFaturarDialog} onOpenChange={() => setConfirmFaturarDialog(null)}>
+      {/* DIALOG DE FATURAMENTO */}
+      <AlertDialog open={confirmFaturarDialog} onOpenChange={setConfirmFaturarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Liberar Faturamento?</AlertDialogTitle>
-            <AlertDialogDescription>O lote irá para o setor financeiro.</AlertDialogDescription>
+            <AlertDialogDescription>O status será alterado para faturado.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => confirmFaturarDialog && liberarFaturamentoMutation.mutate(confirmFaturarDialog.id)}
-            >
+            <AlertDialogAction onClick={() => selectedLote && faturarMutation.mutate(selectedLote.id)}>
               Liberar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {processarRetornoDialog && (
+      {/* DIALOG DE PROCESSAMENTO DE RETORNO */}
+      {selectedLote && (
         <ProcessarRetornoDialog
-          open={!!processarRetornoDialog}
-          onOpenChange={(open) => !open && setProcessarRetornoDialog(null)}
-          loteId={processarRetornoDialog.id}
-          empresaNome={processarRetornoDialog.empresa?.nome || ""}
-          competencia={processarRetornoDialog.competencia}
+          open={processarDialogOpen}
+          onOpenChange={setProcessarDialogOpen}
+          loteId={selectedLote.id}
+          empresaNome={selectedLote.empresa?.nome || ""}
+          competencia={selectedLote.competencia}
         />
       )}
     </div>
   );
-};
-
-// Helper para reduzir repetição no JSX
-function renderTabContent(
-  value: TabType,
-  title: string,
-  icon: any,
-  queries: any,
-  pages: any,
-  setPages: any,
-  handleAction: any,
-  actionLoading: any,
-  actionType: any,
-) {
-  return (
-    <TabsContent value={value} className="mt-6">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            {icon} {title}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LotesTable
-            lotes={queries[value].data?.data || []}
-            isLoading={queries[value].isLoading}
-            currentPage={pages[value]}
-            totalPages={Math.ceil((queries[value].data?.count || 0) / ITEMS_PER_PAGE)}
-            onPageChange={(p) => setPages((prev: any) => ({ ...prev, [value]: p }))}
-            actionType={actionType}
-            onAction={(l) => handleAction(l, value)}
-            actionLoading={actionLoading}
-          />
-        </CardContent>
-      </Card>
-    </TabsContent>
-  );
 }
 
-export default Operacional;
+// Helpers Visuais
+const TabTriggerItem = ({ id, label, icon: Icon, count, variant = "secondary" }: any) => (
+  <TabsTrigger value={id} className="flex items-center gap-2">
+    <Icon className="h-4 w-4" /> {label}
+    <Badge variant={variant} className="ml-1">
+      {count}
+    </Badge>
+  </TabsTrigger>
+);
+
+const TabCard = ({ title, icon: Icon, color, children }: any) => (
+  <Card>
+    <CardHeader className="pb-3">
+      <CardTitle className="flex items-center gap-2 text-lg">
+        <Icon className={`h-5 w-5 ${color}`} /> {title}
+      </CardTitle>
+    </CardHeader>
+    <CardContent>{children}</CardContent>
+  </Card>
+);
