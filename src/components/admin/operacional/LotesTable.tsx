@@ -174,7 +174,7 @@ export function LotesTable({
                   {/* Badge Visual Dinâmico */}
                   {lote.status === "aguardando_reanalise" && (
                     <Badge variant="outline" className="border-orange-400 text-orange-600">
-                      Corrigido
+                      Aguardando Reanálise
                     </Badge>
                   )}
                   {lote.status === "em_reanalise" && (
