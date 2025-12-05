@@ -56,10 +56,12 @@ export function ProcessarRetornoDialog({
   const { data: colaboradores, isLoading } = useQuery({
     queryKey: ["colaboradores-lote", loteId],
     queryFn: async () => {
+      // Buscar apenas colaboradores com status "enviado" (aguardando resposta da seguradora)
       const { data, error } = await supabase
         .from("colaboradores_lote")
         .select("id, nome, cpf, status_seguradora")
         .eq("lote_id", loteId)
+        .eq("status_seguradora", "enviado")
         .order("nome");
 
       if (error) throw error;
