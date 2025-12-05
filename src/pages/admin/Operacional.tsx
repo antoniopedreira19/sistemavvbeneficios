@@ -339,13 +339,13 @@ export default function Operacional() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {selectedLote && (
+      {processarRetornoDialog && (
         <ProcessarRetornoDialog
-          open={processarDialogOpen}
-          onOpenChange={setProcessarDialogOpen}
-          loteId={selectedLote.id}
-          empresaNome={selectedLote.empresa?.nome || ""}
-          competencia={selectedLote.competencia}
+          open={!!processarRetornoDialog}
+          onOpenChange={(open) => !open && setProcessarRetornoDialog(null)}
+          loteId={processarRetornoDialog.id}
+          empresaNome={processarRetornoDialog.empresa?.nome || ""}
+          competencia={processarRetornoDialog.competencia}
         />
       )}
     </div>
