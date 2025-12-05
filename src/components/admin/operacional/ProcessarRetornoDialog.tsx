@@ -5,9 +5,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Copy } from "lucide-react";
+import { Loader2, Copy, AlertCircle, CheckCircle2 } from "lucide-react";
 
 interface ProcessarRetornoDialogProps {
   open: boolean;
@@ -22,6 +23,7 @@ interface ColaboradorLote {
   nome: string;
   cpf: string;
   status_seguradora: string | null;
+  motivo_reprovacao_seguradora: string | null;
 }
 
 interface ReprovadoInfo {
@@ -43,12 +45,13 @@ export function ProcessarRetornoDialog({
   const { data: colaboradores, isLoading } = useQuery({
     queryKey: ["colaboradores-lote", loteId],
     queryFn: async () => {
-      // CORREÇÃO: Buscamos 'pendente' pois é o status padrão de aguardando análise
+      // CORREÇÃO 1: Removemos o filtro de status 'pendente'.
+      // Buscamos TODOS para garantir que o cálculo de valor total seja feito sobre o lote inteiro
+      // e para recuperar itens que ficaram travados em 'aprovado' por erro anterior.
       const { data, error } = await supabase
         .from("colaboradores_lote")
-        .select("id, nome, cpf, status_seguradora")
+        .select("id, nome, cpf, status_seguradora, motivo_reprovacao_seguradora")
         .eq("lote_id", loteId)
-        .eq("status_seguradora", "pendente") // <--- MUDANÇA AQUI (Era 'enviado')
         .order("nome");
 
       if (error) throw error;
@@ -59,11 +62,11 @@ export function ProcessarRetornoDialog({
 
   const processarMutation = useMutation({
     mutationFn: async () => {
-      if (!colaboradores) return; // Guard clause
+      if (!colaboradores) return;
 
       const reprovadosArray = Array.from(reprovados.entries());
 
-      // 1. Atualizar Reprovados
+      // 1. Atualizar quem foi marcado como REPROVADO agora
       for (const [id, info] of reprovadosArray) {
         const { error } = await supabase
           .from("colaboradores_lote")
@@ -75,7 +78,8 @@ export function ProcessarRetornoDialog({
         if (error) throw error;
       }
 
-      // 2. Atualizar Aprovados (Quem era pendente e NÃO foi marcado como reprovado)
+      // 2. Atualizar quem NÃO está na lista de reprovados (Aprovados)
+      // Isso conserta qualquer colaborador que esteja com status errado
       const reprovadosIds = Array.from(reprovados.keys());
       const aprovadosIds = colaboradores.filter((c) => !reprovadosIds.includes(c.id)).map((c) => c.id);
 
@@ -90,44 +94,43 @@ export function ProcessarRetornoDialog({
         if (error) throw error;
       }
 
-      // 3. Atualizar Totais e Status do Lote
-      // Precisamos recalcular os totais reais baseados no banco para não ter erro
-      // Mas para simplificar e ser rápido, usamos a lógica local:
+      // 3. Calcular Totais para o Lote
+      // O cálculo deve considerar o TOTAL do lote, menos os reprovados atuais
+      const totalColaboradores = colaboradores.length;
+      const totalReprovados = reprovadosArray.length;
+      const totalAprovados = totalColaboradores - totalReprovados;
 
-      const novosReprovadosCount = reprovadosArray.length;
-      // Nota: O cálculo de 'total_aprovados' idealmente deveria ser feito via count() no banco
-      // para somar com os já aprovados anteriormente, mas vamos seguir a lógica de fluxo:
+      // CORREÇÃO 2: Cálculo explícito do valor para evitar erro de 'null' no banco
+      const valorTotalCalculado = totalAprovados * 50;
 
-      // Se houver reprovados nesta rodada, o lote continua/volta para pendência
-      // Se não houver reprovados (todos desta lista foram aprovados), verificamos se fechou o lote.
+      // Determinar novo status
+      const novoStatus = totalReprovados > 0 ? "com_pendencia" : "concluido";
 
-      const novoStatus = novosReprovadosCount > 0 ? "com_pendencia" : "concluido";
-
-      // Atualização simples dos contadores (pode precisar de refino se quiser somar histórico)
-      // Aqui estamos assumindo que esta ação define o destino do lote atual.
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
           status: novoStatus,
-          // Atualizamos apenas o status e timestamp, deixamos trigger ou job cuidar dos totais se houver
-          // ou enviamos os totais desta operação se o banco não tiver triggers.
-          total_reprovados: novosReprovadosCount,
-          // total_aprovados: (calculo complexo se for parcial, vamos omitir por segurança ou somar no front se tivermos o total geral)
+          total_aprovados: totalAprovados,
+          total_reprovados: totalReprovados,
+          // IMPORTANTE: Enviamos o valor calculado para satisfazer a constraint not-null das NFs
+          valor_total: valorTotalCalculado,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", loteId);
 
       if (loteError) throw loteError;
 
-      return { novoStatus, totalReprovados: novosReprovadosCount };
+      return { novoStatus, totalReprovados };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-lote", loteId] }); // Limpa cache local
+      // Invalida o cache dos colaboradores para recarregar os status novos se abrir de novo
+      queryClient.invalidateQueries({ queryKey: ["colaboradores-lote", loteId] });
 
       toast.success(
         result.novoStatus === "concluido"
-          ? "Lote aprovado com sucesso!"
-          : `Processado: ${result.totalReprovados} itens reprovados.`,
+          ? "Lote aprovado e finalizado com sucesso!"
+          : `Processado: ${result.totalReprovados} itens reprovados enviadas para pendência.`,
       );
       setReprovados(new Map());
       onOpenChange(false);
@@ -171,6 +174,7 @@ export function ProcessarRetornoDialog({
   };
 
   const handleProcessar = () => {
+    // Validar se todos os marcados como reprovados têm motivo
     for (const [, info] of reprovados) {
       if (!info.motivo.trim()) {
         toast.error("Informe o motivo para todos os colaboradores reprovados");
@@ -178,6 +182,23 @@ export function ProcessarRetornoDialog({
       }
     }
     processarMutation.mutate();
+  };
+
+  // Helper para mostrar status atual na tabela
+  const getStatusBadge = (status: string | null) => {
+    if (status === "aprovado")
+      return (
+        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+          Já Aprovado
+        </Badge>
+      );
+    if (status === "reprovado")
+      return (
+        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          Já Reprovado
+        </Badge>
+      );
+    return <Badge variant="secondary">Pendente</Badge>;
   };
 
   return (
@@ -196,23 +217,28 @@ export function ProcessarRetornoDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
-              Lista de colaboradores aguardando análise (Pendentes).
-              <br />
-              Marque apenas os <strong>Reprovados</strong>. Os demais serão aprovados automaticamente.
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm flex gap-2 items-start">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">Instruções:</p>
+                <p>
+                  Marque abaixo <strong>apenas</strong> os colaboradores REPROVADOS. Todos os desmarcados serão
+                  considerados APROVADOS e o valor da fatura será calculado com base neles.
+                </p>
+              </div>
             </div>
 
             {reprovados.size > 0 && (
               <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border">
                 <Input
-                  placeholder="Motivo em lote..."
+                  placeholder="Motivo em lote (ex: Data incorreta)"
                   value={motivoEmLote}
                   onChange={(e) => setMotivoEmLote(e.target.value)}
                   className="flex-1 h-9"
                 />
                 <Button type="button" variant="secondary" size="sm" onClick={aplicarMotivoEmLote} className="shrink-0">
                   <Copy className="h-4 w-4 mr-1" />
-                  Aplicar a {reprovados.size} selecionado(s)
+                  Aplicar a todos
                 </Button>
               </div>
             )}
@@ -224,14 +250,15 @@ export function ProcessarRetornoDialog({
                     <TableHead className="w-12 text-center">Reprovar</TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>CPF</TableHead>
+                    <TableHead>Status Atual</TableHead>
                     <TableHead>Motivo da Reprovação</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {colaboradores?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                        Nenhum colaborador pendente neste lote.
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        Nenhum colaborador encontrado neste lote.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -245,14 +272,19 @@ export function ProcessarRetornoDialog({
                         </TableCell>
                         <TableCell className="font-medium">{colab.nome}</TableCell>
                         <TableCell>{colab.cpf}</TableCell>
+                        <TableCell>{getStatusBadge(colab.status_seguradora)}</TableCell>
                         <TableCell>
-                          {reprovados.has(colab.id) && (
+                          {reprovados.has(colab.id) ? (
                             <Input
-                              placeholder="Motivo..."
+                              placeholder="Descreva o motivo..."
                               value={reprovados.get(colab.id)?.motivo || ""}
                               onChange={(e) => updateMotivo(colab.id, e.target.value)}
                               className="h-8 border-red-200 focus-visible:ring-red-500"
                             />
+                          ) : (
+                            <span className="text-xs text-green-600 font-medium flex items-center">
+                              <CheckCircle2 className="w-3 h-3 mr-1" /> Aprovado
+                            </span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -263,10 +295,21 @@ export function ProcessarRetornoDialog({
             </div>
 
             <div className="flex items-center justify-between text-sm border-t pt-4">
-              <span>Total Pendentes: {colaboradores?.length || 0}</span>
-              <span className={reprovados.size > 0 ? "text-destructive font-medium" : "text-green-600 font-medium"}>
-                {reprovados.size > 0 ? `${reprovados.size} reprovado(s)` : "Todos serão aprovados"}
+              <span>
+                Total no Lote: <strong>{colaboradores?.length || 0}</strong>
               </span>
+              <div className="flex gap-4 items-center">
+                <div className="text-right">
+                  <p className="text-muted-foreground text-xs">Valor Previsto:</p>
+                  <p className="font-mono font-medium">R$ {((colaboradores?.length || 0) - reprovados.size) * 50},00</p>
+                </div>
+                <span className={reprovados.size > 0 ? "text-destructive font-bold" : "text-muted-foreground"}>
+                  {reprovados.size} Reprovados
+                </span>
+                <span className="text-green-600 font-bold border-l pl-4">
+                  {(colaboradores?.length || 0) - reprovados.size} Aprovados
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -281,7 +324,7 @@ export function ProcessarRetornoDialog({
             className={reprovados.size === 0 ? "bg-green-600 hover:bg-green-700" : "bg-primary"}
           >
             {processarMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {reprovados.size === 0 ? "Aprovar Todos" : "Confirmar Processamento"}
+            {reprovados.size === 0 ? "Aprovar Tudo e Finalizar" : "Confirmar Processamento"}
           </Button>
         </DialogFooter>
       </DialogContent>
