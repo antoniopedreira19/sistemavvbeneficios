@@ -102,13 +102,16 @@ export function ProcessarRetornoDialog({
 
       // Determinar novo status do lote
       const novoStatus = reprovadosArray.length > 0 ? "com_pendencia" : "concluido";
+      const totalAprovados = colaboradores ? colaboradores.length - reprovadosArray.length : 0;
+      const valorTotal = totalAprovados * 50; // R$ 50 por vida
       
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
           status: novoStatus,
-          total_aprovados: colaboradores ? colaboradores.length - reprovadosArray.length : 0,
+          total_aprovados: totalAprovados,
           total_reprovados: reprovadosArray.length,
+          valor_total: valorTotal,
         })
         .eq("id", loteId);
 
