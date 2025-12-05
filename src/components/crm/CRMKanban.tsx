@@ -11,6 +11,7 @@ import {
   Calendar,
   User,
   Mail,
+  Phone,
   PhoneMissed,
   MessageSquare,
   FileSignature,
@@ -20,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
+  ArrowRight,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
