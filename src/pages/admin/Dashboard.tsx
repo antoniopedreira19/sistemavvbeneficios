@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Building2, Wallet, DollarSign, AlertTriangle, TrendingUp, Activity } from "lucide-react";
 import {
-  ComposedChart, // Mudamos para ComposedChart para ter Barra + Linha
+  ComposedChart,
   Line,
   Bar,
   XAxis,
@@ -16,11 +16,10 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { format, subMonths } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Cores para o gráfico de pizza e barras
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
 export default function Dashboard() {
@@ -30,7 +29,6 @@ export default function Dashboard() {
     queryFn: async () => {
       const hoje = new Date();
       const mesAtual = format(hoje, "MMMM/yyyy", { locale: ptBR });
-      // Capitaliza primeira letra: "Dezembro/2025"
       const competenciaAtual = mesAtual.charAt(0).toUpperCase() + mesAtual.slice(1);
 
       // A. Empresas Ativas
@@ -68,8 +66,7 @@ export default function Dashboard() {
         .select("status")
         .eq("competencia", competenciaAtual);
 
-      // F. Histórico Evolutivo (Últimos 6 meses - Vidas e Faturamento)
-      // Buscamos notas fiscais para faturamento real e lotes para volume de vidas
+      // F. Histórico Evolutivo
       const { data: historicoLotes } = await supabase
         .from("lotes_mensais")
         .select("competencia, total_colaboradores, valor_total, created_at")
@@ -88,9 +85,8 @@ export default function Dashboard() {
     },
   });
 
-  // 2. PROCESSAMENTO DE DADOS DOS GRÁFICOS
+  // 2. PROCESSAMENTO DE DADOS
 
-  // Gráfico de Pizza (Status Operacional)
   const statusDist = [
     {
       name: "Na Seguradora",
@@ -115,12 +111,10 @@ export default function Dashboard() {
     },
   ].filter((item) => item.value > 0);
 
-  // Gráfico Composto (Evolução Financeira x Vidas)
-  // Agrupa e soma valores por competência
   const rawChartData =
     dashboardData?.historicoLotes?.reduce((acc: any[], curr) => {
       const existing = acc.find((item) => item.name === curr.competencia);
-      const valor = Number(curr.valor_total) || Number(curr.total_colaboradores) * 50; // Fallback se valor_total nulo
+      const valor = Number(curr.valor_total) || Number(curr.total_colaboradores) * 50;
 
       if (existing) {
         existing.vidas += curr.total_colaboradores || 0;
@@ -135,7 +129,7 @@ export default function Dashboard() {
       return acc;
     }, []) || [];
 
-  const chartData = rawChartData.slice(-6); // Últimos 6 meses
+  const chartData = rawChartData.slice(-6);
 
   if (isLoading) {
     return <DashboardSkeleton />;
@@ -155,18 +149,26 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI CARDS */}
+      {/* KPI CARDS (Reordenados) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Faturamento Realizado (Caixa) */}
+        {/* 1. Empresas */}
         <KpiCard
-          title="Faturamento (NFs Emitidas)"
+          title="Empresas Ativas"
+          value={dashboardData?.empresasAtivas}
+          icon={Building2}
+          description="Total na carteira"
+        />
+
+        {/* 2. Faturamento Realizado */}
+        <KpiCard
+          title="Faturamento (NFs)"
           value={`R$ ${dashboardData?.faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
           icon={DollarSign}
           description="Confirmado no mês atual"
           iconColor="text-green-600"
         />
 
-        {/* Card 2: Faturamento Esperado (Potencial) */}
+        {/* 3. Faturamento Esperado */}
         <KpiCard
           title="Faturamento Esperado"
           value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
@@ -175,34 +177,26 @@ export default function Dashboard() {
           iconColor="text-blue-600"
         />
 
-        {/* Card 3: Empresas (Carteira) */}
-        <KpiCard
-          title="Empresas Ativas"
-          value={dashboardData?.empresasAtivas}
-          icon={Building2}
-          description="Total na carteira"
-        />
-
-        {/* Card 4: Operacional (Pendências) */}
+        {/* 4. Ação Necessária */}
         <KpiCard
           title="Ação Necessária"
           value={dashboardData?.acaoNecessaria}
           icon={AlertTriangle}
-          description="Lotes aguardando sua análise"
+          description="Lotes aguardando análise"
           highlight={dashboardData?.acaoNecessaria > 0}
         />
       </div>
 
       {/* GRÁFICOS */}
       <div className="grid gap-4 md:grid-cols-7">
-        {/* GRÁFICO COMPOSTO: Faturamento vs Vidas */}
+        {/* GRÁFICO COMPOSTO */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-primary" />
               Evolução Financeira & Vidas
             </CardTitle>
-            <CardDescription>Comparativo dos últimos 6 meses</CardDescription>
+            <CardDescription>Faturamento (Barras) vs Vidas (Linha)</CardDescription>
           </CardHeader>
           <CardContent className="pl-0">
             <div className="h-[350px] w-full">
@@ -211,24 +205,35 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
 
-                  {/* Eixo Y Esquerdo (Vidas - Barras) */}
+                  {/* Eixo Y Esquerdo: Faturamento (Dinheiro) */}
                   <YAxis
                     yAxisId="left"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    label={{ value: "Vidas", angle: -90, position: "insideLeft", style: { fill: "#8884d8" } }}
+                    tickFormatter={(val) => `R$${val / 1000}k`}
+                    label={{
+                      value: "Faturamento",
+                      angle: -90,
+                      position: "insideLeft",
+                      style: { fill: "#82ca9d" }, // Verde
+                    }}
                   />
 
-                  {/* Eixo Y Direito (Faturamento - Linha) */}
+                  {/* Eixo Y Direito: Vidas (Números) - Afastado */}
                   <YAxis
                     yAxisId="right"
                     orientation="right"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(val) => `R$${val / 1000}k`}
-                    label={{ value: "Faturamento", angle: 90, position: "insideRight", style: { fill: "#82ca9d" } }}
+                    label={{
+                      value: "Vidas",
+                      angle: 90,
+                      position: "insideRight",
+                      offset: 15, // Afasta o título do eixo
+                      style: { fill: "#8884d8" }, // Roxo
+                    }}
                   />
 
                   <Tooltip
@@ -240,13 +245,23 @@ export default function Dashboard() {
                   />
                   <Legend />
 
-                  <Bar yAxisId="left" dataKey="vidas" name="Vidas" fill="#8884d8" barSize={30} radius={[4, 4, 0, 0]} />
+                  {/* Barras = Faturamento (Verde) */}
+                  <Bar
+                    yAxisId="left"
+                    dataKey="faturamento"
+                    name="Faturamento"
+                    fill="#82ca9d"
+                    barSize={30}
+                    radius={[4, 4, 0, 0]}
+                  />
+
+                  {/* Linha = Vidas (Roxo) */}
                   <Line
                     yAxisId="right"
                     type="monotone"
-                    dataKey="faturamento"
-                    name="Faturamento"
-                    stroke="#82ca9d"
+                    dataKey="vidas"
+                    name="Vidas"
+                    stroke="#8884d8"
                     strokeWidth={3}
                     dot={{ r: 4 }}
                   />
@@ -256,7 +271,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* GRÁFICO DE PIZZA: Status */}
+        {/* GRÁFICO DE PIZZA */}
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle>Status Operacional do Mês</CardTitle>
