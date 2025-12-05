@@ -11,7 +11,6 @@ import {
   Calendar,
   User,
   Mail,
-  Phone,
   PhoneMissed,
   MessageSquare,
   FileSignature,
@@ -96,13 +95,12 @@ export function CRMKanban() {
     },
   });
 
-  // Mutação com Optimistic UI (Zero Piscada)
+  // Mutação com Optimistic UI
   const moveCardMutation = useMutation({
     mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
       const { error } = await supabase.from("empresas").update({ status_crm: newStatus }).eq("id", id);
       if (error) throw error;
     },
-    // O segredo está aqui: Atualizamos o cache ANTES do servidor responder
     onMutate: async ({ id, newStatus }) => {
       await queryClient.cancelQueries({ queryKey: ["crm-empresas"] });
       const previousEmpresas = queryClient.getQueryData(["crm-empresas"]);
@@ -114,7 +112,6 @@ export function CRMKanban() {
       return { previousEmpresas };
     },
     onError: (err, newTodo, context: any) => {
-      // Se der erro, volta como estava
       queryClient.setQueryData(["crm-empresas"], context.previousEmpresas);
       toast.error("Erro ao mover empresa");
     },
@@ -243,7 +240,9 @@ export function CRMKanban() {
                         {...provided.droppableProps}
                         ref={provided.innerRef}
                         className={`
-                          flex-1 p-2 rounded-xl border transition-all duration-200 overflow-y-auto
+                          flex-1 p-2 rounded-xl border transition-colors duration-200 overflow-y-auto 
+                          /* AUMENTO DO ESPAÇAMENTO AQUI (space-y-4) */
+                          space-y-4 
                           ${colConfig.color}
                           ${snapshot.isDraggingOver ? "ring-2 ring-primary/50 bg-white/50" : ""}
                           ${isFinalColumn ? "flex items-center justify-center opacity-90 hover:opacity-100 cursor-pointer" : ""}
@@ -266,10 +265,16 @@ export function CRMKanban() {
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
                                   {...provided.dragHandleProps}
+                                  // REMOVIDO: transition-all duration-200 (Causa do glitch)
+                                  // ADICIONADO: hover apenas quando não está arrastando
                                   className={`
-                                    cursor-grab active:cursor-grabbing border-none shadow-sm transition-all duration-200 group relative
-                                    hover:shadow-md hover:-translate-y-0.5
-                                    ${snapshot.isDragging ? "shadow-2xl ring-2 ring-primary rotate-2 scale-105 z-50" : "bg-white"}
+                                    cursor-grab active:cursor-grabbing border-none shadow-sm group relative
+                                    ${
+                                      snapshot.isDragging
+                                        ? "shadow-2xl ring-2 ring-primary scale-105 z-50 opacity-90"
+                                        : "hover:shadow-md hover:-translate-y-0.5 transition-transform duration-200"
+                                    }
+                                    bg-white
                                   `}
                                 >
                                   <CardContent className="p-4 space-y-4">
