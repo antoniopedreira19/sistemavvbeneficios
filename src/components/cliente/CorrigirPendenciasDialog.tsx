@@ -1,33 +1,27 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertCircle, Edit2, Save, X, Send } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Loader2, AlertCircle, Edit2, Save, X, Send } from "lucide-react";
 
 interface CorrigirPendenciasDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  loteId: string | null;
+  loteId: string;
   obraNome: string;
   competencia: string;
 }
@@ -58,10 +52,9 @@ export function CorrigirPendenciasDialog({
   const { data: reprovados, isLoading } = useQuery({
     queryKey: ["colaboradores-reprovados", loteId],
     queryFn: async () => {
-      if (!loteId) return [];
       const { data, error } = await supabase
         .from("colaboradores_lote")
-        .select("id, nome, cpf, data_nascimento, sexo, salario, motivo_reprovacao_seguradora, tentativa_reenvio")
+        .select("*")
         .eq("lote_id", loteId)
         .eq("status_seguradora", "reprovado")
         .order("nome");
@@ -72,28 +65,28 @@ export function CorrigirPendenciasDialog({
     enabled: open && !!loteId,
   });
 
-  // Mutation para salvar edição de um colaborador
+  // Mutation para salvar edição
   const editMutation = useMutation({
-    mutationFn: async (colaborador: Partial<ColaboradorReprovado> & { id: string }) => {
+    mutationFn: async ({ id, ...dados }: Partial<ColaboradorReprovado> & { id: string }) => {
       const { error } = await supabase
         .from("colaboradores_lote")
         .update({
-          nome: colaborador.nome,
-          cpf: colaborador.cpf,
-          data_nascimento: colaborador.data_nascimento,
-          sexo: colaborador.sexo,
-          salario: colaborador.salario,
+          nome: dados.nome,
+          cpf: dados.cpf,
+          data_nascimento: dados.data_nascimento,
+          sexo: dados.sexo,
+          salario: dados.salario,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", colaborador.id);
+        .eq("id", id);
 
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Dados atualizados com sucesso");
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
+      toast.success("Dados atualizados");
       setEditingId(null);
       setEditForm({});
+      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
     },
     onError: (error) => {
       toast.error("Erro ao salvar: " + error.message);
@@ -108,10 +101,10 @@ export function CorrigirPendenciasDialog({
       }
 
       // Calcular próxima tentativa
-      const maxTentativa = Math.max(...reprovados.map(r => r.tentativa_reenvio));
+      const maxTentativa = Math.max(...reprovados.map((r) => r.tentativa_reenvio || 1));
       const novaTentativa = maxTentativa + 1;
 
-      // 1. Atualiza os ITENS (Colaboradores)
+      // 1. Atualizar status dos ITENS (Colaboradores)
       const { error: updateError } = await supabase
         .from("colaboradores_lote")
         .update({
@@ -126,11 +119,12 @@ export function CorrigirPendenciasDialog({
 
       if (updateError) throw updateError;
 
-      // 2. Atualiza o LOTE para reanálise na seguradora
+      // 2. Atualizar status do LOTE para o NOVO STATUS DE REANÁLISE
+      // Isso garante que ele vá para a aba "Reanálise" do Admin, e não para "Entrada"
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
-          status: "em_analise_seguradora",
+          status: "aguardando_reanalise", // <--- A MUDANÇA CRUCIAL AQUI
           updated_at: new Date().toISOString(),
         })
         .eq("id", loteId);
@@ -139,32 +133,21 @@ export function CorrigirPendenciasDialog({
 
       return { totalReenviados: reprovados.length };
     },
-    onSuccess: (data) => {
-      toast.success(`${data.totalReenviados} colaborador(es) reenviado(s) para análise`);
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
-      queryClient.invalidateQueries({ queryKey: ["lotes"] });
-      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados"] });
+      queryClient.invalidateQueries({ queryKey: ["lotes"] }); // Atualiza listas do cliente
+      toast.success(`${result.totalReenviados} colaborador(es) enviados para reanálise.`);
       onOpenChange(false);
     },
     onError: (error) => {
-      toast.error("Erro ao reenviar: " + error.message);
+      console.error(error);
+      toast.error("Erro ao enviar: " + error.message);
     },
   });
 
-  const startEditing = (colaborador: ColaboradorReprovado) => {
-    setEditingId(colaborador.id);
-    setEditForm({
-      nome: colaborador.nome,
-      cpf: colaborador.cpf,
-      data_nascimento: colaborador.data_nascimento,
-      sexo: colaborador.sexo,
-      salario: colaborador.salario,
-    });
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditForm({});
+  const startEditing = (colab: ColaboradorReprovado) => {
+    setEditingId(colab.id);
+    setEditForm({ ...colab });
   };
 
   const saveEditing = () => {
@@ -188,149 +171,94 @@ export function CorrigirPendenciasDialog({
 
         <ScrollArea className="h-[400px] pr-4">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">Carregando...</p>
+            <div className="flex justify-center py-8">
+              <Loader2 className="animate-spin" />
             </div>
           ) : reprovados && reprovados.length > 0 ? (
             <div className="space-y-4">
-              {reprovados.map((colaborador) => (
-                <div
-                  key={colaborador.id}
-                  className="border rounded-lg p-4 space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {editingId === colaborador.id ? editForm.nome : colaborador.nome}
-                      </span>
-                      <Badge variant="destructive" className="text-xs">
-                        Reprovado
-                      </Badge>
-                    </div>
-                    {editingId === colaborador.id ? (
+              {reprovados.map((colab) => (
+                <div key={colab.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="font-medium">{editingId === colab.id ? "Editando..." : colab.nome}</div>
+                    {editingId === colab.id ? (
                       <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={cancelEditing}
-                        >
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
                           <X className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={saveEditing}
-                          disabled={editMutation.isPending}
-                        >
-                          <Save className="h-4 w-4 mr-1" />
-                          Salvar
+                        <Button size="sm" onClick={saveEditing} disabled={editMutation.isPending}>
+                          <Save className="h-4 w-4 mr-1" /> Salvar
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => startEditing(colaborador)}
-                      >
-                        <Edit2 className="h-4 w-4 mr-1" />
-                        Editar
+                      <Button size="sm" variant="outline" onClick={() => startEditing(colab)}>
+                        <Edit2 className="h-4 w-4 mr-1" /> Editar
                       </Button>
                     )}
                   </div>
 
-                  {colaborador.motivo_reprovacao_seguradora && (
-                    <div className="bg-destructive/10 text-destructive text-sm p-2 rounded">
-                      <strong>Motivo:</strong> {colaborador.motivo_reprovacao_seguradora}
+                  {colab.motivo_reprovacao_seguradora && (
+                    <div className="bg-red-50 text-red-700 text-sm p-2 rounded">
+                      Motivo: {colab.motivo_reprovacao_seguradora}
                     </div>
                   )}
 
-                  {editingId === colaborador.id ? (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
+                  {editingId === colab.id ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
                         <Label>Nome</Label>
                         <Input
-                          value={editForm.nome || ""}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, nome: e.target.value })
-                          }
+                          value={editForm.nome}
+                          onChange={(e) => setEditForm({ ...editForm, nome: e.target.value })}
                         />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         <Label>CPF</Label>
                         <Input
-                          value={editForm.cpf || ""}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, cpf: e.target.value })
-                          }
+                          value={editForm.cpf}
+                          onChange={(e) => setEditForm({ ...editForm, cpf: e.target.value })}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Data de Nascimento</Label>
+                      <div className="space-y-1">
+                        <Label>Nascimento</Label>
                         <Input
                           type="date"
-                          value={editForm.data_nascimento || ""}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, data_nascimento: e.target.value })
-                          }
+                          value={editForm.data_nascimento}
+                          onChange={(e) => setEditForm({ ...editForm, data_nascimento: e.target.value })}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Sexo</Label>
-                        <Select
-                          value={editForm.sexo || ""}
-                          onValueChange={(value) =>
-                            setEditForm({ ...editForm, sexo: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="M">Masculino</SelectItem>
-                            <SelectItem value="F">Feminino</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         <Label>Salário</Label>
                         <Input
                           type="number"
-                          value={editForm.salario || ""}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, salario: parseFloat(e.target.value) })
-                          }
+                          value={editForm.salario}
+                          onChange={(e) => setEditForm({ ...editForm, salario: parseFloat(e.target.value) })}
                         />
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-                      <div>CPF: {colaborador.cpf}</div>
-                      <div>Nascimento: {colaborador.data_nascimento}</div>
-                      <div>Sexo: {colaborador.sexo === "M" ? "Masculino" : colaborador.sexo === "F" ? "Feminino" : "-"}</div>
-                      <div>Salário: R$ {colaborador.salario?.toLocaleString("pt-BR")}</div>
+                    <div className="text-sm text-muted-foreground grid grid-cols-2 gap-2">
+                      <div>CPF: {colab.cpf}</div>
+                      <div>Salário: R$ {colab.salario}</div>
                     </div>
                   )}
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">
-                Nenhum colaborador com pendência encontrado
-              </p>
-            </div>
+            <p className="text-center py-8 text-muted-foreground">Nenhuma pendência encontrada.</p>
           )}
         </ScrollArea>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
           <Button
             onClick={() => reenviarMutation.mutate()}
-            disabled={!reprovados || reprovados.length === 0 || reenviarMutation.isPending}
+            disabled={reenviarMutation.isPending || !reprovados?.length}
           >
-            <Send className="h-4 w-4 mr-2" />
-            {reenviarMutation.isPending ? "Enviando..." : "Reenviar para Análise"}
+            {reenviarMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : <Send className="mr-2 h-4 w-4" />}
+            Reenviar Correções
           </Button>
         </DialogFooter>
       </DialogContent>
