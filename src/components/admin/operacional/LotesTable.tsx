@@ -50,18 +50,17 @@ export function LotesTable({
   const getActionButton = (lote: LoteOperacional) => {
     const isActionLoading = actionLoading === lote.id;
 
-    // Lógica para determinar qual botão mostrar
-    type InternalAction = "enviar" | "processar" | "pendencia" | "faturar" | "enviar_reanalise";
-    let currentAction: InternalAction = actionType === "reanalise" ? "enviar_reanalise" : actionType;
-
-    // Se estiver na aba Reanálise, o botão muda dependendo do estado do lote
-    if (actionType === "reanalise") {
-      if (lote.status === "aguardando_reanalise") {
-        currentAction = "enviar_reanalise";
-      } else if (lote.status === "em_reanalise") {
-        currentAction = "processar";
+    // Determinar ação interna baseado no tipo e status do lote
+    const getInternalAction = (): "enviar" | "processar" | "pendencia" | "faturar" | "enviar_reanalise" => {
+      if (actionType === "reanalise") {
+        if (lote.status === "aguardando_reanalise") return "enviar_reanalise";
+        if (lote.status === "em_reanalise") return "processar";
+        return "enviar_reanalise";
       }
-    }
+      return actionType;
+    };
+
+    const currentAction = getInternalAction();
 
     switch (currentAction) {
       case "enviar":
