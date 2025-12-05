@@ -253,7 +253,17 @@ export function CRMKanban() {
       <DragDropContext onDragEnd={handleDragEnd}>
         <div 
           ref={scrollContainerRef}
-          className="flex gap-3 overflow-x-auto pb-4 scroll-smooth"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              scrollLeft();
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              scrollRight();
+            }
+          }}
+          className="flex gap-3 overflow-x-auto pb-4 scroll-smooth focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-lg"
           style={{ scrollbarWidth: "thin" }}
         >
           {CRM_COLUMNS.map((column) => {
