@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { useUserRole } from "@/hooks/useUserRole";
 import {
   Dialog,
@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 
 const usuarioSchema = z.object({
   nome: z.string().trim().min(1, "Nome é obrigatório").max(200, "Nome muito longo"),
-  email: z.string().trim().email("Email inválido").max(255, "Email muito longo"),
+  celular: z.string().optional(),
   role: z.enum(["admin", "operacional", "cliente", "financeiro"], {
     required_error: "Selecione um tipo de usuário",
   }),
@@ -45,10 +45,9 @@ interface Usuario {
   id: string;
   nome: string;
   email: string;
+  celular: string | null;
   empresa_id: string | null;
-  user_roles: {
-    role: string;
-  }[];
+  role: string | null;
 }
 
 interface Empresa {
@@ -57,7 +56,7 @@ interface Empresa {
 }
 
 interface EditarUsuarioDialogProps {
-  usuario: Usuario;
+  usuario: Usuario | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
@@ -66,20 +65,30 @@ interface EditarUsuarioDialogProps {
 export const EditarUsuarioDialog = ({ usuario, open, onOpenChange, onSuccess }: EditarUsuarioDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const { toast } = useToast();
   const { isOperacional } = useUserRole();
 
   const form = useForm<UsuarioFormData>({
     resolver: zodResolver(usuarioSchema),
     defaultValues: {
-      nome: usuario.nome,
-      email: usuario.email,
-      role: (usuario.user_roles[0]?.role as "admin" | "operacional" | "cliente" | "financeiro") || "cliente",
-      empresa_id: usuario.empresa_id || "",
+      nome: "",
+      celular: "",
+      role: "cliente",
+      empresa_id: "",
     },
   });
 
   const role = form.watch("role");
+
+  useEffect(() => {
+    if (usuario && open) {
+      form.reset({
+        nome: usuario.nome,
+        celular: usuario.celular || "",
+        role: (usuario.role as "admin" | "operacional" | "cliente" | "financeiro") || "cliente",
+        empresa_id: usuario.empresa_id || "",
+      });
+    }
+  }, [usuario, open, form]);
 
   useEffect(() => {
     const fetchEmpresas = async () => {
@@ -95,16 +104,12 @@ export const EditarUsuarioDialog = ({ usuario, open, onOpenChange, onSuccess }: 
 
     if (open) {
       fetchEmpresas();
-      form.reset({
-        nome: usuario.nome,
-        email: usuario.email,
-        role: (usuario.user_roles[0]?.role as "admin" | "operacional" | "cliente" | "financeiro") || "cliente",
-        empresa_id: usuario.empresa_id || "",
-      });
     }
-  }, [open, usuario, form]);
+  }, [open]);
 
   const onSubmit = async (data: UsuarioFormData) => {
+    if (!usuario) return;
+    
     setLoading(true);
     try {
       // Update profile
@@ -112,38 +117,36 @@ export const EditarUsuarioDialog = ({ usuario, open, onOpenChange, onSuccess }: 
         .from("profiles")
         .update({
           nome: data.nome,
-          email: data.email,
+          celular: data.celular || null,
           empresa_id: data.role === 'cliente' ? data.empresa_id : null,
         })
         .eq("id", usuario.id);
 
       if (profileError) throw profileError;
 
-      // Update role
+      // Update role - delete existing and insert new
+      await supabase
+        .from("user_roles")
+        .delete()
+        .eq("user_id", usuario.id);
+
       const { error: roleError } = await supabase
         .from("user_roles")
-        .update({ role: data.role as any })
-        .eq("user_id", usuario.id);
+        .insert({ user_id: usuario.id, role: data.role as any });
 
       if (roleError) throw roleError;
 
-      toast({
-        title: "Usuário atualizado!",
-        description: "As informações do usuário foram atualizadas com sucesso.",
-      });
-
+      toast.success("Usuário atualizado com sucesso!");
       onOpenChange(false);
       onSuccess?.();
     } catch (error: any) {
-      toast({
-        title: "Erro ao atualizar usuário",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error(error.message || "Erro ao atualizar usuário");
     } finally {
       setLoading(false);
     }
   };
+
+  if (!usuario) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -151,7 +154,7 @@ export const EditarUsuarioDialog = ({ usuario, open, onOpenChange, onSuccess }: 
         <DialogHeader>
           <DialogTitle>Editar Usuário</DialogTitle>
           <DialogDescription>
-            Atualize as informações do usuário
+            Atualize as informações de <strong>{usuario.email}</strong>
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -171,12 +174,12 @@ export const EditarUsuarioDialog = ({ usuario, open, onOpenChange, onSuccess }: 
             />
             <FormField
               control={form.control}
-              name="email"
+              name="celular"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>Celular</FormLabel>
                   <FormControl>
-                    <Input type="email" {...field} disabled />
+                    <Input placeholder="(00) 00000-0000" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

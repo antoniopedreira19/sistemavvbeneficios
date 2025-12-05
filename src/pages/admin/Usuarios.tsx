@@ -25,6 +25,7 @@ interface Usuario {
   id: string;
   nome: string;
   email: string;
+  celular: string | null;
   empresa_id: string | null;
   empresas?: {
     nome: string;
@@ -32,6 +33,7 @@ interface Usuario {
   user_roles: {
     role: string;
   }[];
+  role: string | null;
 }
 
 interface Empresa {
@@ -72,6 +74,7 @@ const Usuarios = () => {
       profilesData?.map((profile) => ({
         ...profile,
         user_roles: rolesData?.filter((role) => role.user_id === profile.id) || [],
+        role: rolesData?.find((role) => role.user_id === profile.id)?.role || null,
       })) || [];
 
     setUsuarios(usuariosComRoles as any);
