@@ -312,7 +312,7 @@ export default function Operacional() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedLote?.status === "aguardando_reanalise"
-                ? "O lote corrigido será enviado para seguradora'."
+                ? "O lote corrigido será enviado para seguradora."
                 : "O lote será enviado para análise inicial da seguradora."}
             </AlertDialogDescription>
           </AlertDialogHeader>
