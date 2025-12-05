@@ -38,7 +38,7 @@ interface LotesTableProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
-  actionType: "enviar" | "processar" | "pendencia" | "faturar";
+  actionType: "enviar" | "processar" | "pendencia" | "faturar" | "dinamico";
   onAction: (lote: LoteOperacional) => void;
   actionLoading?: string | null;
 }
@@ -55,8 +55,13 @@ export function LotesTable({
 }: LotesTableProps) {
   const getActionButton = (lote: LoteOperacional) => {
     const isLoading = actionLoading === lote.id;
+    
+    // Para tipo dinâmico, determina ação baseada no status do lote
+    const effectiveType = actionType === "dinamico" 
+      ? (lote.status === "aguardando_processamento" ? "enviar" : "processar")
+      : actionType;
 
-    switch (actionType) {
+    switch (effectiveType) {
       case "enviar":
         return (
           <Button size="sm" onClick={() => onAction(lote)} disabled={isLoading}>
