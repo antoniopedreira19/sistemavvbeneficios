@@ -1,27 +1,28 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertCircle, Edit2, Save, X, Send } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, AlertCircle, Edit2, Save, X, Send } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface CorrigirPendenciasDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  loteId: string;
+  loteId: string | null;
   obraNome: string;
   competencia: string;
 }
@@ -52,9 +53,10 @@ export function CorrigirPendenciasDialog({
   const { data: reprovados, isLoading } = useQuery({
     queryKey: ["colaboradores-reprovados", loteId],
     queryFn: async () => {
+      if (!loteId) return [];
       const { data, error } = await supabase
         .from("colaboradores_lote")
-        .select("*")
+        .select("id, nome, cpf, data_nascimento, sexo, salario, motivo_reprovacao_seguradora, tentativa_reenvio")
         .eq("lote_id", loteId)
         .eq("status_seguradora", "reprovado")
         .order("nome");
@@ -65,28 +67,28 @@ export function CorrigirPendenciasDialog({
     enabled: open && !!loteId,
   });
 
-  // Mutation para salvar edição
+  // Mutation para salvar edição de um colaborador
   const editMutation = useMutation({
-    mutationFn: async ({ id, ...dados }: Partial<ColaboradorReprovado> & { id: string }) => {
+    mutationFn: async (colaborador: Partial<ColaboradorReprovado> & { id: string }) => {
       const { error } = await supabase
         .from("colaboradores_lote")
         .update({
-          nome: dados.nome,
-          cpf: dados.cpf,
-          data_nascimento: dados.data_nascimento,
-          sexo: dados.sexo,
-          salario: dados.salario,
+          nome: colaborador.nome,
+          cpf: colaborador.cpf,
+          data_nascimento: colaborador.data_nascimento,
+          sexo: colaborador.sexo,
+          salario: colaborador.salario,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", id);
+        .eq("id", colaborador.id);
 
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Dados atualizados");
+      toast.success("Dados atualizados com sucesso");
+      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
       setEditingId(null);
       setEditForm({});
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
     },
     onError: (error) => {
       toast.error("Erro ao salvar: " + error.message);
@@ -101,14 +103,15 @@ export function CorrigirPendenciasDialog({
       }
 
       // Calcular próxima tentativa
-      const maxTentativa = Math.max(...reprovados.map((r) => r.tentativa_reenvio || 1));
+      const maxTentativa = Math.max(...reprovados.map((r) => r.tentativa_reenvio || 0));
       const novaTentativa = maxTentativa + 1;
 
-      // 1. Atualizar status dos ITENS (Colaboradores)
+      // 1. Atualiza os ITENS (Colaboradores)
+      // CORREÇÃO 1: Muda para 'pendente' (o banco aceita), não 'enviado' (o banco rejeita)
       const { error: updateError } = await supabase
         .from("colaboradores_lote")
         .update({
-          status_seguradora: "enviado",
+          status_seguradora: "pendente",
           tentativa_reenvio: novaTentativa,
           data_tentativa: new Date().toISOString(),
           motivo_reprovacao_seguradora: null,
@@ -119,12 +122,12 @@ export function CorrigirPendenciasDialog({
 
       if (updateError) throw updateError;
 
-      // 2. Atualizar status do LOTE para o NOVO STATUS DE REANÁLISE
-      // Isso garante que ele vá para a aba "Reanálise" do Admin, e não para "Entrada"
+      // 2. Atualiza o LOTE para o NOVO STATUS DE REANÁLISE
+      // CORREÇÃO 2: Muda para 'aguardando_reanalise' para cair na aba certa do Admin
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
-          status: "aguardando_reanalise", // <--- A MUDANÇA CRUCIAL AQUI
+          status: "aguardando_reanalise",
           updated_at: new Date().toISOString(),
         })
         .eq("id", loteId);
@@ -133,21 +136,32 @@ export function CorrigirPendenciasDialog({
 
       return { totalReenviados: reprovados.length };
     },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados"] });
-      queryClient.invalidateQueries({ queryKey: ["lotes"] }); // Atualiza listas do cliente
-      toast.success(`${result.totalReenviados} colaborador(es) enviados para reanálise.`);
+    onSuccess: (data) => {
+      toast.success(`${data.totalReenviados} colaborador(es) enviados para reanálise.`);
+      queryClient.invalidateQueries({ queryKey: ["colaboradores-reprovados", loteId] });
+      queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
     },
     onError: (error) => {
-      console.error(error);
-      toast.error("Erro ao enviar: " + error.message);
+      toast.error("Erro ao reenviar: " + error.message);
     },
   });
 
-  const startEditing = (colab: ColaboradorReprovado) => {
-    setEditingId(colab.id);
-    setEditForm({ ...colab });
+  const startEditing = (colaborador: ColaboradorReprovado) => {
+    setEditingId(colaborador.id);
+    setEditForm({
+      nome: colaborador.nome,
+      cpf: colaborador.cpf,
+      data_nascimento: colaborador.data_nascimento,
+      sexo: colaborador.sexo,
+      salario: colaborador.salario,
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditForm({});
   };
 
   const saveEditing = () => {
@@ -171,18 +185,18 @@ export function CorrigirPendenciasDialog({
 
         <ScrollArea className="h-[400px] pr-4">
           {isLoading ? (
-            <div className="flex justify-center py-8">
+            <div className="flex items-center justify-center py-8">
               <Loader2 className="animate-spin" />
             </div>
           ) : reprovados && reprovados.length > 0 ? (
             <div className="space-y-4">
-              {reprovados.map((colab) => (
-                <div key={colab.id} className="border rounded-lg p-4 space-y-3">
+              {reprovados.map((colaborador) => (
+                <div key={colaborador.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex justify-between items-center">
-                    <div className="font-medium">{editingId === colab.id ? "Editando..." : colab.nome}</div>
-                    {editingId === colab.id ? (
+                    <div className="font-medium">{editingId === colaborador.id ? "Editando..." : colaborador.nome}</div>
+                    {editingId === colaborador.id ? (
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                        <Button size="sm" variant="ghost" onClick={cancelEditing}>
                           <X className="h-4 w-4" />
                         </Button>
                         <Button size="sm" onClick={saveEditing} disabled={editMutation.isPending}>
@@ -190,19 +204,19 @@ export function CorrigirPendenciasDialog({
                         </Button>
                       </div>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => startEditing(colab)}>
+                      <Button size="sm" variant="outline" onClick={() => startEditing(colaborador)}>
                         <Edit2 className="h-4 w-4 mr-1" /> Editar
                       </Button>
                     )}
                   </div>
 
-                  {colab.motivo_reprovacao_seguradora && (
+                  {colaborador.motivo_reprovacao_seguradora && (
                     <div className="bg-red-50 text-red-700 text-sm p-2 rounded">
-                      Motivo: {colab.motivo_reprovacao_seguradora}
+                      Motivo: {colaborador.motivo_reprovacao_seguradora}
                     </div>
                   )}
 
-                  {editingId === colab.id ? (
+                  {editingId === colaborador.id ? (
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <Label>Nome</Label>
@@ -234,11 +248,26 @@ export function CorrigirPendenciasDialog({
                           onChange={(e) => setEditForm({ ...editForm, salario: parseFloat(e.target.value) })}
                         />
                       </div>
+                      <div className="space-y-1">
+                        <Label>Sexo</Label>
+                        <Select
+                          value={editForm.sexo || ""}
+                          onValueChange={(value) => setEditForm({ ...editForm, sexo: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="M">Masculino</SelectItem>
+                            <SelectItem value="F">Feminino</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground grid grid-cols-2 gap-2">
-                      <div>CPF: {colab.cpf}</div>
-                      <div>Salário: R$ {colab.salario}</div>
+                      <div>CPF: {colaborador.cpf}</div>
+                      <div>Salário: R$ {colaborador.salario}</div>
                     </div>
                   )}
                 </div>
