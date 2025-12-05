@@ -518,11 +518,13 @@ const ClienteDashboard = () => {
           </CardHeader>
           <CardContent>
             {(() => {
-              const loteFaturado = lotesAtuais?.find(l => l.status === 'faturado');
-              if (loteFaturado) {
+              const lotesFaturados = lotesAtuais?.filter(l => l.status === 'faturado') || [];
+              const valorTotal = lotesFaturados.reduce((acc, l) => acc + (l.valor_total || 0), 0);
+              
+              if (lotesFaturados.length > 0) {
                 return (
                   <>
-                    <div className="text-2xl font-bold">{formatCurrency(loteFaturado.valor_total ?? null)}</div>
+                    <div className="text-2xl font-bold">{formatCurrency(valorTotal)}</div>
                     <p className="text-xs text-muted-foreground">{competenciaAtualCapitalized}</p>
                   </>
                 );
