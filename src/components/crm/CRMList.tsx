@@ -1,135 +1,144 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmpresaCRM } from "@/types/crm";
-import { formatTelefone, formatEmail } from "@/lib/validators";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Search, Mail, Phone, MoreHorizontal, FileText, Users } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 
-interface CRMListProps {
-  empresas: EmpresaCRM[];
-  statusLabels: Record<string, string>;
-  onSelectEmpresa: (empresa: EmpresaCRM) => void;
-}
+export function CRMList() {
+  const [searchTerm, setSearchTerm] = useState("");
 
-const STATUS_BADGE_VARIANTS: Record<string, string> = {
-  sem_retorno: "bg-red-500/10 text-red-600 border-red-500/30 hover:bg-red-500/20",
-  tratativa: "bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20",
-  contrato_assinado: "bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20",
-  apolices_emitida: "bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20",
-  acolhimento: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30 hover:bg-cyan-500/20",
-  empresa_ativa: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20",
-};
+  const { data: empresas, isLoading } = useQuery({
+    queryKey: ["empresas-ativas"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("empresas").select("*").eq("status", "ativa").order("nome");
 
-const CRMList = ({ empresas, statusLabels, onSelectEmpresa }: CRMListProps) => {
-  return (
-    <div className="border rounded-lg bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="font-semibold">Nome</TableHead>
-            <TableHead className="font-semibold">Responsável</TableHead>
-            <TableHead className="font-semibold">Contato</TableHead>
-            <TableHead className="font-semibold">Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {empresas.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                Nenhuma empresa encontrada
-              </TableCell>
-            </TableRow>
-          ) : (
-            empresas.map((empresa) => (
-              <TableRow
-                key={empresa.id}
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => onSelectEmpresa(empresa)}
-              >
-                <TableCell>
-                  <div>
-                    <p className="font-medium text-foreground">{empresa.nome}</p>
-                    <p className="text-sm text-muted-foreground">{empresa.cnpj}</p>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <p className="text-sm text-foreground">
-                    {empresa.nome_responsavel || (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    {(() => {
-                      const emailsArray = empresa.emails_contato || [];
-                      const allEmails = empresa.email_contato 
-                        ? [empresa.email_contato, ...emailsArray] 
-                        : emailsArray;
-                      const uniqueEmails = Array.from(new Set(allEmails.filter(e => e && e.trim() !== "")));
-                      
-                      return uniqueEmails.length > 0 && (
-                        <div className="space-y-0.5">
-                          {uniqueEmails.slice(0, 2).map((email: string, idx: number) => (
-                            <p key={idx} className={idx === 0 ? "text-sm text-foreground" : "text-xs text-muted-foreground"}>{formatEmail(email)}</p>
-                          ))}
-                          {uniqueEmails.length > 2 && (
-                            <p className="text-xs text-muted-foreground">+{uniqueEmails.length - 2} mais</p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    
-                    {(() => {
-                      const telefonesArray = empresa.telefones_contato || [];
-                      const allTelefones = empresa.telefone_contato 
-                        ? [empresa.telefone_contato, ...telefonesArray] 
-                        : telefonesArray;
-                      const uniqueTelefones = Array.from(new Set(allTelefones.filter(t => t && t.trim() !== "")));
-                      
-                      return uniqueTelefones.length > 0 && (
-                        <div className="space-y-0.5">
-                          {uniqueTelefones.slice(0, 2).map((tel: string, idx: number) => (
-                            <p key={idx} className="text-sm text-muted-foreground">{formatTelefone(tel)}</p>
-                          ))}
-                          {uniqueTelefones.length > 2 && (
-                            <p className="text-xs text-muted-foreground">+{uniqueTelefones.length - 2} mais</p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    
-                    {(() => {
-                      const emailsArray = empresa.emails_contato || [];
-                      const telefonesArray = empresa.telefones_contato || [];
-                      const allEmails = empresa.email_contato ? [empresa.email_contato, ...emailsArray] : emailsArray;
-                      const allTelefones = empresa.telefone_contato ? [empresa.telefone_contato, ...telefonesArray] : telefonesArray;
-                      const hasAnyContact = allEmails.some(e => e && e.trim() !== "") || allTelefones.some(t => t && t.trim() !== "");
-                      
-                      return !hasAnyContact && <p className="text-sm text-muted-foreground">-</p>;
-                    })()}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge 
-                    variant="outline" 
-                    className={STATUS_BADGE_VARIANTS[empresa.status_crm]}
-                  >
-                    {statusLabels[empresa.status_crm]}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const filteredEmpresas = empresas?.filter(
+    (empresa) => empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm),
   );
-};
 
-export default CRMList;
+  if (isLoading)
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary" />
+            Carteira de Clientes ({empresas?.length || 0})
+          </div>
+          <div className="relative w-72">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome ou CNPJ..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Empresa</TableHead>
+                <TableHead>Responsável</TableHead>
+                <TableHead>Contato</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredEmpresas?.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    Nenhuma empresa encontrada na carteira.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredEmpresas?.map((empresa) => (
+                  <TableRow key={empresa.id}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-base">{empresa.nome}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{empresa.cnpj}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 text-sm">
+                        {empresa.email_contato && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Mail className="h-3 w-3" /> {empresa.email_contato}
+                          </div>
+                        )}
+                        {empresa.telefone_contato && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Phone className="h-3 w-3" /> {empresa.telefone_contato}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200"
+                      >
+                        Ativa
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <span className="sr-only">Abrir menu</span>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(empresa.cnpj)}>
+                            Copiar CNPJ
+                          </DropdownMenuItem>
+                          <DropdownMenuItem>
+                            <FileText className="mr-2 h-4 w-4" /> Ver Contrato/Lotes
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
