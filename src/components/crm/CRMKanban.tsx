@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, Mail, Phone } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { User, Mail, Phone, Search } from "lucide-react";
 import { toast } from "sonner";
 import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
@@ -47,7 +48,6 @@ function KanbanCard({ empresa, onClick }: KanbanCardProps) {
       onClick={onClick}
       className="p-3 bg-card border shadow-sm cursor-pointer select-none"
     >
-      {/* Header: Avatar + Nome + CNPJ */}
       <div className="flex items-center gap-2 mb-2">
         <Avatar className="h-8 w-8 shrink-0">
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
@@ -64,7 +64,6 @@ function KanbanCard({ empresa, onClick }: KanbanCardProps) {
         </div>
       </div>
 
-      {/* Info rows */}
       <div className="space-y-1 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5 truncate">
           <User className="h-3 w-3 shrink-0" />
@@ -88,6 +87,7 @@ function KanbanCard({ empresa, onClick }: KanbanCardProps) {
 export function CRMKanban() {
   const queryClient = useQueryClient();
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const { data: empresas = [], isLoading } = useQuery({
     queryKey: ["empresas-crm"],
@@ -103,13 +103,25 @@ export function CRMKanban() {
     },
   });
 
+  // Filter empresas by search term
+  const filteredEmpresas = useMemo(() => {
+    if (!searchTerm.trim()) return empresas;
+    const term = searchTerm.toLowerCase().replace(/\D/g, "");
+    const termText = searchTerm.toLowerCase();
+    return empresas.filter(
+      (e) =>
+        e.nome.toLowerCase().includes(termText) ||
+        e.cnpj.replace(/\D/g, "").includes(term) ||
+        e.cnpj.includes(searchTerm)
+    );
+  }, [empresas, searchTerm]);
+
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status_crm }: { id: string; status_crm: string }) => {
       const { error } = await supabase.from("empresas").update({ status_crm }).eq("id", id);
       if (error) throw error;
     },
     onError: () => {
-      // Revert on error
       queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
       toast.error("Erro ao atualizar status");
     },
@@ -121,43 +133,89 @@ export function CRMKanban() {
     if (!destination) return;
     if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
-    // Optimistic update - update cache immediately
+    const newStatus = destination.droppableId;
+
+    // Optimistic update with correct positioning
     queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
       if (!old) return old;
-      return old.map((e) =>
-        e.id === draggableId ? { ...e, status_crm: destination.droppableId } : e
+
+      const updated = [...old];
+      const movedEmpresa = updated.find((e) => e.id === draggableId);
+      if (!movedEmpresa) return old;
+
+      // Update the status
+      movedEmpresa.status_crm = newStatus;
+
+      // Get items in destination column (excluding the moved item)
+      const destItems = updated.filter(
+        (e) => e.status_crm === newStatus && e.id !== draggableId
       );
+
+      // Calculate new order by adjusting created_at to position correctly
+      // We'll use a simple approach: reorder the array based on destination index
+      const sourceItems = updated.filter(
+        (e) => e.status_crm === source.droppableId && e.id !== draggableId
+      );
+
+      // Build new array maintaining order
+      const result: EmpresaCRM[] = [];
+      
+      for (const column of CRM_COLUMNS) {
+        const columnItems = column.id === newStatus
+          ? [...destItems.slice(0, destination.index), movedEmpresa, ...destItems.slice(destination.index)]
+          : updated.filter((e) => e.status_crm === column.id && e.id !== draggableId);
+        
+        result.push(...columnItems);
+      }
+
+      return result;
     });
 
-    // Fire mutation without waiting
+    // Fire mutation
     updateStatusMutation.mutate({
       id: draggableId,
-      status_crm: destination.droppableId,
+      status_crm: newStatus,
     });
   };
 
   const getColumnEmpresas = (statusId: string) => {
-    return empresas.filter((e) => e.status_crm === statusId);
+    return filteredEmpresas.filter((e) => e.status_crm === statusId);
   };
 
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {CRM_COLUMNS.map((col) => (
-          <div key={col.id} className="min-w-[280px] bg-muted/30 rounded-lg p-3 animate-pulse">
-            <div className="h-5 bg-muted rounded w-24 mb-3" />
-            <div className="space-y-2">
-              <div className="h-24 bg-muted rounded" />
-              <div className="h-24 bg-muted rounded" />
+      <div className="space-y-4">
+        <div className="w-72 h-10 bg-muted rounded animate-pulse" />
+        <div className="flex gap-3 overflow-x-auto pb-4">
+          {CRM_COLUMNS.map((col) => (
+            <div key={col.id} className="min-w-[280px] bg-muted/30 rounded-lg p-3 animate-pulse">
+              <div className="h-5 bg-muted rounded w-24 mb-3" />
+              <div className="space-y-2">
+                <div className="h-24 bg-muted rounded" />
+                <div className="h-24 bg-muted rounded" />
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
     <>
+      {/* Search Bar */}
+      <div className="mb-4">
+        <div className="relative w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou CNPJ..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </div>
+
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4">
           {CRM_COLUMNS.map((column) => {
@@ -180,7 +238,7 @@ export function CRMKanban() {
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       className={`
-                        min-h-[400px] p-2 rounded-lg border
+                        min-h-[400px] p-2 rounded-lg border transition-colors
                         ${snapshot.isDraggingOver 
                           ? "bg-primary/5 border-primary/30" 
                           : "bg-muted/20 border-border/50"}
@@ -194,10 +252,8 @@ export function CRMKanban() {
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                style={{
-                                  ...provided.draggableProps.style,
-                                  opacity: snapshot.isDragging ? 0.9 : 1,
-                                }}
+                                style={provided.draggableProps.style}
+                                className={snapshot.isDragging ? "opacity-90" : ""}
                               >
                                 <KanbanCard
                                   empresa={empresa}
