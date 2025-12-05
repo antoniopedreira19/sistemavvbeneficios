@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Send, 
   Users, 
@@ -176,6 +176,33 @@ const ClienteDashboard = () => {
     },
     enabled: !!empresaId,
   });
+
+  // Realtime subscription para lotes_mensais
+  useEffect(() => {
+    if (!empresaId) return;
+
+    const channel = supabase
+      .channel('lotes-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'lotes_mensais',
+          filter: `empresa_id=eq.${empresaId}`
+        },
+        (payload) => {
+          console.log('Lote atualizado em realtime:', payload);
+          queryClient.invalidateQueries({ queryKey: ["lotes-atuais"] });
+          queryClient.invalidateQueries({ queryKey: ["historico-lotes"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [empresaId, queryClient]);
 
   // Verificar lote em andamento (não rascunho)
   const loteEmAndamento = lotesAtuais?.find(
