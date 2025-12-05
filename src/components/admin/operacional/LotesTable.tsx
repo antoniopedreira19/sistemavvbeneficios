@@ -50,15 +50,16 @@ export function LotesTable({
   const getActionButton = (lote: LoteOperacional) => {
     const isActionLoading = actionLoading === lote.id;
 
-    // Lógica inteligente para saber qual botão mostrar
-    let currentAction = actionType;
+    // Lógica para determinar qual botão mostrar
+    type InternalAction = "enviar" | "processar" | "pendencia" | "faturar" | "enviar_reanalise";
+    let currentAction: InternalAction = actionType === "reanalise" ? "enviar_reanalise" : actionType;
 
     // Se estiver na aba Reanálise, o botão muda dependendo do estado do lote
     if (actionType === "reanalise") {
       if (lote.status === "aguardando_reanalise") {
-        currentAction = "enviar_reanalise" as any; // Reenviar para Seguradora
+        currentAction = "enviar_reanalise";
       } else if (lote.status === "em_reanalise") {
-        currentAction = "processar" as any; // Processar retorno
+        currentAction = "processar";
       }
     }
 
