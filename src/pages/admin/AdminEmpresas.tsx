@@ -1,14 +1,10 @@
-import { useState } from "react";
-import { Building2, List, KanbanSquare, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Building2, List, KanbanSquare } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
 import { CRMList } from "@/components/crm/CRMList";
-import { CRMKanban } from "@/components/crm/CRMKanban";
+import { CRMKanbanContainer } from "@/components/crm/CRMKanbanContainer";
 
 export default function AdminEmpresas() {
-  const [isNovaEmpresaOpen, setIsNovaEmpresaOpen] = useState(false);
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -19,10 +15,7 @@ export default function AdminEmpresas() {
             <p className="text-muted-foreground">Gerencie sua carteira de clientes e funil de vendas</p>
           </div>
         </div>
-        <Button onClick={() => setIsNovaEmpresaOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Empresa
-        </Button>
+        <NovaEmpresaDialog />
       </div>
 
       <Tabs defaultValue="ativos" className="w-full">
@@ -42,11 +35,9 @@ export default function AdminEmpresas() {
         </TabsContent>
 
         <TabsContent value="crm" className="mt-6">
-          <CRMKanban />
+          <CRMKanbanContainer />
         </TabsContent>
       </Tabs>
-
-      <NovaEmpresaDialog open={isNovaEmpresaOpen} onOpenChange={setIsNovaEmpresaOpen} />
     </div>
   );
 }
