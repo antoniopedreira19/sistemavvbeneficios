@@ -14,7 +14,7 @@ export default function AdminEmpresas() {
           <Building2 className="h-8 w-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold">Empresas</h1>
-            <p className="text-muted-foreground">Gerencie sua carteira de clientes, inativos e funil de vendas.</p>
+            <p className="text-muted-foreground">Gerencie sua carteira de clientes</p>
           </div>
         </div>
         <Button onClick={() => setIsNovaEmpresaOpen(true)}>
