@@ -17,7 +17,7 @@ export default function AdminEmpresas() {
           <Building2 className="h-8 w-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold">Empresas & CRM</h1>
-            <p className="text-muted-foreground">Gerencie sua carteira de clientes, funil de vendas e histórico.</p>
+            <p className="text-muted-foreground">Gerencie sua carteira de clientes, inativos e funil de vendas.</p>
           </div>
         </div>
         <Button onClick={() => setIsNovaEmpresaOpen(true)}>
@@ -28,20 +28,25 @@ export default function AdminEmpresas() {
 
       <Tabs defaultValue="ativos" className="w-full">
         <TabsList className="grid w-full max-w-[600px] grid-cols-3">
+          {/* 1. ATIVOS */}
           <TabsTrigger value="ativos" className="flex items-center gap-2">
             <List className="h-4 w-4" />
             Ativos
           </TabsTrigger>
+
+          {/* 2. INATIVOS (Movido para o meio) */}
+          <TabsTrigger
+            value="inativos"
+            className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-red-600"
+          >
+            <ArchiveX className="h-4 w-4" />
+            Inativas
+          </TabsTrigger>
+
+          {/* 3. CRM (Movido para o fim) */}
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <KanbanSquare className="h-4 w-4" />
             CRM (Funil)
-          </TabsTrigger>
-          <TabsTrigger
-            value="inativos"
-            className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-slate-900"
-          >
-            <ArchiveX className="h-4 w-4" />
-            Outros Status
           </TabsTrigger>
         </TabsList>
 
@@ -49,12 +54,12 @@ export default function AdminEmpresas() {
           <CRMList />
         </TabsContent>
 
-        <TabsContent value="crm" className="mt-6">
-          <CRMKanban />
-        </TabsContent>
-
         <TabsContent value="inativos" className="mt-6">
           <CRMInactiveList />
+        </TabsContent>
+
+        <TabsContent value="crm" className="mt-6">
+          <CRMKanban />
         </TabsContent>
       </Tabs>
 
