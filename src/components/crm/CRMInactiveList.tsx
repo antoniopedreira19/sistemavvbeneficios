@@ -1,14 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,46 +15,71 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const ITEMS_PER_PAGE = 50;
 
 export function CRMInactiveList() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("empresas")
-        .select("*")
-        .neq("status", "ativa") // Traz TUDO que não é 'ativa' (Inclui em_implementacao, cancelado, etc)
-        .order("nome");
-      
+      const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa").order("nome");
+
       if (error) throw error;
       return data;
     },
   });
 
-  const filteredEmpresas = empresas?.filter(empresa => 
-    empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    empresa.cnpj.includes(searchTerm)
-  );
+  // Filtragem
+  const filteredEmpresas =
+    empresas?.filter(
+      (empresa) => empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm),
+    ) || [];
 
-  if (isLoading) return <div className="space-y-4"><Skeleton className="h-12 w-full"/><Skeleton className="h-64 w-full"/></div>;
+  // Lógica de Paginação
+  const totalPages = Math.ceil(filteredEmpresas.length / ITEMS_PER_PAGE);
+  const paginatedEmpresas = filteredEmpresas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  if (isLoading)
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
 
   return (
     <Card className="border-red-100/50">
       <CardHeader>
         <CardTitle className="flex justify-between items-center text-slate-700">
           <div className="flex items-center gap-2">
-            <ArchiveX className="h-5 w-5 text-slate-500"/>
-            Outros Status / Inativos ({empresas?.length || 0})
+            <ArchiveX className="h-5 w-5 text-slate-500" />
+            Empresas Inativas / Outros ({empresas?.length || 0})
           </div>
           <div className="relative w-72">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Buscar por nome ou CNPJ..."
-              className="pl-8"
+              className="pl-8 border-red-200 focus-visible:ring-red-500"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reseta para página 1 ao filtrar
+              }}
             />
           </div>
         </CardTitle>
@@ -71,22 +89,23 @@ export function CRMInactiveList() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
-                <TableHead>Empresa</TableHead>
-                <TableHead>Responsável</TableHead>
-                <TableHead>Contato</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                {/* Definição de larguras para evitar quebra de layout */}
+                <TableHead className="w-[30%]">Empresa</TableHead>
+                <TableHead className="w-[20%]">Responsável</TableHead>
+                <TableHead className="w-[25%]">Contato</TableHead>
+                <TableHead className="w-[15%] text-center">Status</TableHead>
+                <TableHead className="w-[10%] text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEmpresas?.length === 0 ? (
+              {paginatedEmpresas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     Nenhuma empresa encontrada com status diferente de ativo.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredEmpresas?.map((empresa) => (
+                paginatedEmpresas.map((empresa) => (
                   <TableRow key={empresa.id}>
                     <TableCell>
                       <div className="flex flex-col">
@@ -98,15 +117,19 @@ export function CRMInactiveList() {
                       {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-1 text-sm">
+                      <div className="flex flex-col gap-1 text-sm max-w-[200px]">
                         {empresa.email_contato && (
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Mail className="h-3 w-3" /> {empresa.email_contato}
+                          <div
+                            className="flex items-center gap-1 text-muted-foreground truncate"
+                            title={empresa.email_contato}
+                          >
+                            <Mail className="h-3 w-3 shrink-0" />{" "}
+                            <span className="truncate">{empresa.email_contato}</span>
                           </div>
                         )}
                         {empresa.telefone_contato && (
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Phone className="h-3 w-3" /> {empresa.telefone_contato}
+                          <div className="flex items-center gap-1 text-muted-foreground truncate">
+                            <Phone className="h-3 w-3 shrink-0" /> {empresa.telefone_contato}
                           </div>
                         )}
                       </div>
@@ -127,9 +150,7 @@ export function CRMInactiveList() {
                           <DropdownMenuItem onClick={() => navigator.clipboard.writeText(empresa.cnpj)}>
                             Copiar CNPJ
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-primary font-medium">
-                            Ver Detalhes
-                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-primary font-medium">Ver Detalhes</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -139,6 +160,33 @@ export function CRMInactiveList() {
             </TableBody>
           </Table>
         </div>
+
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="mt-4">
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+
+                <span className="text-sm text-muted-foreground px-4">
+                  Página {currentPage} de {totalPages}
+                </span>
+
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -146,11 +194,23 @@ export function CRMInactiveList() {
 
 // Helper para colorir os badges conforme o status
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'em_implementacao') {
-    return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Em Implementação</Badge>;
+  if (status === "em_implementacao") {
+    return (
+      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
+        Em Implementação
+      </Badge>
+    );
   }
-  if (status === 'cancelada' || status === 'inativa') {
-    return <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100">Inativa</Badge>;
+  if (status === "cancelada" || status === "inativa") {
+    return (
+      <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 whitespace-nowrap">
+        Inativa
+      </Badge>
+    );
   }
-  return <Badge variant="secondary">{status}</Badge>;
+  return (
+    <Badge variant="secondary" className="whitespace-nowrap">
+      {status}
+    </Badge>
+  );
 }
