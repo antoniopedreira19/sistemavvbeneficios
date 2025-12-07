@@ -34,11 +34,12 @@ const empresaSchema = z.object({
 type EmpresaFormData = z.infer<typeof empresaSchema>;
 
 interface NovaEmpresaDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
 }
 
-export const NovaEmpresaDialog = ({ onSuccess }: NovaEmpresaDialogProps) => {
-  const [open, setOpen] = useState(false);
+export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresaDialogProps) => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -76,7 +77,7 @@ export const NovaEmpresaDialog = ({ onSuccess }: NovaEmpresaDialogProps) => {
       });
 
       form.reset();
-      setOpen(false);
+      onOpenChange(false);
       onSuccess?.();
     } catch (error: any) {
       toast({
@@ -90,7 +91,7 @@ export const NovaEmpresaDialog = ({ onSuccess }: NovaEmpresaDialogProps) => {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild></DialogTrigger>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
@@ -198,7 +199,7 @@ export const NovaEmpresaDialog = ({ onSuccess }: NovaEmpresaDialogProps) => {
                 )}
               />
               <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={loading}>
