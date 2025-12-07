@@ -1,5 +1,12 @@
 import { useState, useRef } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -11,14 +18,24 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const ITEMS_PER_PAGE = 50;
 
 const CLASSIFICACOES_SALARIO = [
-  { label: "Ajudante Comum", minimo: 1454.20 },
-  { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.20 },
+  { label: "Ajudante Comum", minimo: 1454.2 },
+  { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.2 },
   { label: "Oficial", minimo: 2378.34 },
-  { label: "Op. Qualificado I", minimo: 2637.80 },
-  { label: "Op. Qualificado II", minimo: 3262.60 },
-  { label: "Op. Qualificado III", minimo: 4037.00 },
+  { label: "Op. Qualificado I", minimo: 2637.8 },
+  { label: "Op. Qualificado II", minimo: 3262.6 },
+  { label: "Op. Qualificado III", minimo: 4037.0 },
 ];
 
 interface ColaboradorRow {
@@ -50,84 +67,61 @@ const calcularClassificacaoSalario = (valorSalario: number): string => {
   if (valorSalario < CLASSIFICACOES_SALARIO[0].minimo) {
     return CLASSIFICACOES_SALARIO[0].label;
   }
-  
-  const classificacao = [...CLASSIFICACOES_SALARIO]
-    .reverse()
-    .find(c => valorSalario >= c.minimo);
-  
+
+  const classificacao = [...CLASSIFICACOES_SALARIO].reverse().find((c) => valorSalario >= c.minimo);
+
   return classificacao?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
 const normalizarSexo = (valor: any): string | null => {
   if (!valor) return null;
-  
   const str = String(valor).trim().toLowerCase();
-  
   if (["masculino", "masc", "m"].includes(str)) return "Masculino";
   if (["feminino", "fem", "f", "femi"].includes(str)) return "Feminino";
   if (["outro", "o"].includes(str)) return "Outro";
-  
   return null;
 };
 
 const normalizarSalario = (valor: any): number | null => {
   if (typeof valor === "number") return valor;
   if (!valor) return null;
-  
-  const str = String(valor)
-    .replace(/R\$/g, "")
-    .replace(/\s/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
-  
+  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
   const num = parseFloat(str);
   return isNaN(num) ? null : num;
 };
 
 const normalizarData = (valor: any): string | null => {
   if (!valor) return null;
-  
   const str = String(valor).trim();
-  
-  // Formato DD/MM/AAAA
   const ddmmyyyyMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (ddmmyyyyMatch) {
     const [, dia, mes, ano] = ddmmyyyyMatch;
     return `${ano}-${mes}-${dia}`;
   }
-  
-  // Formato AAAA-MM-DD
   const yyyymmddMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (yyyymmddMatch) {
-    return str;
-  }
-  
-  // Data do Excel (número serial)
+  if (yyyymmddMatch) return str;
   if (!isNaN(Number(valor))) {
     const excelDate = XLSX.SSF.parse_date_code(Number(valor));
     if (excelDate) {
-      const ano = excelDate.y;
-      const mes = String(excelDate.m).padStart(2, "0");
-      const dia = String(excelDate.d).padStart(2, "0");
-      return `${ano}-${mes}-${dia}`;
+      return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
     }
   }
-  
   return null;
 };
 
-export function ImportarColaboradoresDialog({ 
-  open, 
-  onOpenChange, 
-  empresaId, 
-  obraId, 
+export function ImportarColaboradoresDialog({
+  open,
+  onOpenChange,
+  empresaId,
+  obraId,
   competencia,
-  onSuccess 
+  onSuccess,
 }: ImportarColaboradoresDialogProps) {
   const [validatedRows, setValidatedRows] = useState<ValidatedRow[]>([]);
   const [processing, setProcessing] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "novo" | "atualizado" | "erro">("todos");
   const [desligamentosPrevistos, setDesligamentosPrevistos] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { importing, atualizarColaboradores } = useImportarColaboradores();
@@ -135,46 +129,21 @@ export function ImportarColaboradoresDialog({
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Colaboradores");
-    
-    // Adicionar cabeçalho
     worksheet.addRow(["Nome", "Sexo", "CPF", "Data Nascimento", "Salário"]);
-    
-    // Definir larguras das colunas
-    worksheet.columns = [
-      { width: 35 },  // Nome
-      { width: 15 },  // Sexo
-      { width: 18 },  // CPF
-      { width: 20 },  // Data Nascimento
-      { width: 15 },  // Salário
-    ];
-    
-    // Aplicar estilo ao cabeçalho (primeira linha)
+    worksheet.columns = [{ width: 35 }, { width: 15 }, { width: 18 }, { width: 20 }, { width: 15 }];
     worksheet.getRow(1).eachCell((cell) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFC0504D' }
-      };
-      cell.font = {
-        bold: true,
-        color: { argb: 'FFFFFFFF' }
-      };
-      cell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle'
-      };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0504D" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
     });
-    
-    // Gerar e baixar arquivo
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = 'modelo_colaboradores.xlsx';
+    link.download = "modelo_colaboradores.xlsx";
     link.click();
     window.URL.revokeObjectURL(url);
-    
     toast.success("Modelo baixado com sucesso");
   };
 
@@ -185,6 +154,9 @@ export function ImportarColaboradoresDialog({
     }
 
     setProcessing(true);
+    setValidatedRows([]); // Limpa anterior
+    setCurrentPage(1); // Reseta paginação
+
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
@@ -197,43 +169,38 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
-      // Normalizar cabeçalhos (case-insensitive e remover acentos)
+      // Normalização de cabeçalhos e validação (igual ao seu código original)
       const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
-      const normalizeHeader = (h: string) => h.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
-        .replace(/[^a-z0-9]/g, ""); // remove caracteres especiais
-      
+      const normalizeHeader = (h: string) =>
+        h
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]/g, "");
       const normalizedHeaders = rawHeaders.map(normalizeHeader);
-      
-      // Mapeamento de colunas (flexível)
+
       const headerMapping: Record<string, string[]> = {
-        "Nome": ["nome", "nomecompleto", "funcionario", "colaborador"],
-        "Sexo": ["sexo", "genero", "gender"],
-        "CPF": ["cpf", "documento", "doc"],
+        Nome: ["nome", "nomecompleto", "funcionario", "colaborador"],
+        Sexo: ["sexo", "genero", "gender"],
+        CPF: ["cpf", "documento", "doc"],
         "Data Nascimento": ["datanascimento", "nascimento", "dtnasc", "datanasc", "dtnascimento"],
-        "Salário": ["salario", "remuneracao", "vencimento", "salariobase"],
+        Salário: ["salario", "remuneracao", "vencimento", "salariobase"],
       };
-      
-      // Encontrar índice de cada coluna
+
       const columnIndexes: Record<string, number> = {};
       const missingColumns: string[] = [];
-      
       for (const [requiredCol, aliases] of Object.entries(headerMapping)) {
-        const foundIndex = normalizedHeaders.findIndex(h => aliases.includes(h));
-        if (foundIndex === -1) {
-          missingColumns.push(requiredCol);
-        } else {
-          columnIndexes[requiredCol] = foundIndex;
-        }
+        const foundIndex = normalizedHeaders.findIndex((h) => aliases.includes(h));
+        if (foundIndex === -1) missingColumns.push(requiredCol);
+        else columnIndexes[requiredCol] = foundIndex;
       }
-      
+
       if (missingColumns.length > 0) {
-        toast.error(`Colunas obrigatórias não encontradas: ${missingColumns.join(", ")}. Verifique se sua planilha possui: Nome, Sexo, CPF, Data Nascimento, Salário`);
+        toast.error(`Colunas obrigatórias não encontradas: ${missingColumns.join(", ")}.`);
         setProcessing(false);
         return;
       }
 
-      // Buscar colaboradores existentes da empresa
       const { data: existentes } = await supabase
         .from("colaboradores")
         .select("*")
@@ -241,22 +208,15 @@ export function ImportarColaboradoresDialog({
         .eq("obra_id", obraId)
         .eq("status", "ativo");
 
-      const existentesMap = new Map(
-        (existentes || []).map(c => [c.cpf, c])
-      );
-
+      const existentesMap = new Map((existentes || []).map((c) => [c.cpf, c]));
       const cpfsNoArquivo = new Set<string>();
       const validated: ValidatedRow[] = [];
 
+      // Processamento das linhas
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        
-        // Pular linhas vazias
-        if (!row || row.length === 0 || row.every((cell: any) => !cell)) {
-          continue;
-        }
-        
-        // Extrair dados usando os índices mapeados
+        if (!row || row.length === 0 || row.every((cell: any) => !cell)) continue;
+
         const rowData = {
           Nome: row[columnIndexes["Nome"]],
           Sexo: row[columnIndexes["Sexo"]],
@@ -268,41 +228,21 @@ export function ImportarColaboradoresDialog({
         const erros: string[] = [];
         const linha = i + 1;
 
-        // Validar Nome
+        // Validações
         const nome = rowData["Nome"]?.toString().trim();
         if (!nome) erros.push("Nome obrigatório");
-
-        // Validar e Normalizar Sexo
         const sexoNormalizado = normalizarSexo(rowData["Sexo"]);
-        if (!sexoNormalizado) {
-          erros.push("Sexo inválido (use: Masculino/M/Masc, Feminino/F/Fem ou Outro/O)");
-        }
-
-        // Validar e Normalizar CPF
+        if (!sexoNormalizado) erros.push("Sexo inválido");
         const cpfRaw = rowData["CPF"]?.toString().replace(/\D/g, "");
-        if (!cpfRaw || cpfRaw.length !== 11) {
-          erros.push("CPF deve ter 11 dígitos");
-        } else if (!validateCPF(cpfRaw)) {
-          erros.push("CPF inválido");
-        } else if (cpfsNoArquivo.has(cpfRaw)) {
-          erros.push("CPF duplicado no arquivo");
-        } else {
-          cpfsNoArquivo.add(cpfRaw);
-        }
-
-        // Validar Data
+        if (!cpfRaw || cpfRaw.length !== 11) erros.push("CPF deve ter 11 dígitos");
+        else if (!validateCPF(cpfRaw)) erros.push("CPF inválido");
+        else if (cpfsNoArquivo.has(cpfRaw)) erros.push("CPF duplicado");
+        else cpfsNoArquivo.add(cpfRaw);
         const dataNascimento = normalizarData(rowData["Data Nascimento"]);
-        if (!dataNascimento) {
-          erros.push("Data de nascimento inválida (use DD/MM/AAAA ou AAAA-MM-DD)");
-        }
-
-        // Validar Salário
+        if (!dataNascimento) erros.push("Data inválida");
         const salario = normalizarSalario(rowData["Salário"]);
-        if (salario === null || salario < 0) {
-          erros.push("Salário deve ser um número ≥ 0");
-        }
+        if (salario === null || salario < 0) erros.push("Salário inválido");
 
-        // Determinar status
         let status: "novo" | "atualizado" | "erro" = "erro";
         let dadosAtuais: any = null;
         let alteracoes: string[] = [];
@@ -311,19 +251,10 @@ export function ImportarColaboradoresDialog({
           const existente = existentesMap.get(cpfRaw);
           if (existente) {
             dadosAtuais = existente;
-            
-            // Detectar alterações
-            if (existente.nome !== nome) alteracoes.push(`Nome: "${existente.nome}" → "${nome}"`);
-            if (existente.sexo !== sexoNormalizado) alteracoes.push(`Sexo: "${existente.sexo}" → "${sexoNormalizado}"`);
-            if (existente.data_nascimento !== dataNascimento) {
-              alteracoes.push(`Data Nasc.: "${existente.data_nascimento}" → "${dataNascimento}"`);
-            }
-            if (Math.abs(existente.salario - salario!) > 0.01) {
-              alteracoes.push(`Salário: R$ ${existente.salario.toFixed(2)} → R$ ${salario!.toFixed(2)}`);
-            }
-
-            // Se houver alterações, marcar como atualizado; se não, marcar como novo
-            // (porque a importação substitui todos os colaboradores)
+            if (existente.nome !== nome) alteracoes.push(`Nome`);
+            if (existente.sexo !== sexoNormalizado) alteracoes.push(`Sexo`);
+            if (existente.data_nascimento !== dataNascimento) alteracoes.push(`Data Nasc.`);
+            if (Math.abs(existente.salario - salario!) > 0.01) alteracoes.push(`Salário`);
             status = alteracoes.length > 0 ? "atualizado" : "novo";
           } else {
             status = "novo";
@@ -345,13 +276,11 @@ export function ImportarColaboradoresDialog({
       }
 
       setValidatedRows(validated);
-      
-      // Calcular desligamentos previstos (quem está ativo mas NÃO está na lista)
-      const cpfsValidados = new Set(validated.filter(v => v.status !== "erro").map(v => v.cpf));
-      const desligamentos = (existentes || []).filter(e => !cpfsValidados.has(e.cpf)).length;
+      const cpfsValidados = new Set(validated.filter((v) => v.status !== "erro").map((v) => v.cpf));
+      const desligamentos = (existentes || []).filter((e) => !cpfsValidados.has(e.cpf)).length;
       setDesligamentosPrevistos(desligamentos);
     } catch (error) {
-      console.error("Erro ao processar arquivo:", error);
+      console.error("Erro ao processar:", error);
       toast.error("Erro ao processar arquivo");
     } finally {
       setProcessing(false);
@@ -360,23 +289,19 @@ export function ImportarColaboradoresDialog({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      validarArquivo(file);
-    }
+    if (file) validarArquivo(file);
   };
 
   const confirmarImportacao = async () => {
     try {
-      const colaboradoresValidos = validatedRows.filter(r => r.status !== "erro");
-      
+      const colaboradoresValidos = validatedRows.filter((r) => r.status !== "erro");
       if (colaboradoresValidos.length === 0) {
-        toast.error("Nenhum colaborador válido para importar");
+        toast.error("Nenhum colaborador válido");
         return;
       }
 
-      // Apenas atualiza a tabela de colaboradores (SEM criar lote)
       const result = await atualizarColaboradores(
-        colaboradoresValidos.map(r => ({
+        colaboradoresValidos.map((r) => ({
           nome: r.nome,
           sexo: r.sexo,
           cpf: r.cpf,
@@ -385,15 +310,14 @@ export function ImportarColaboradoresDialog({
           classificacao_salario: calcularClassificacaoSalario(r.salario),
         })),
         empresaId,
-        obraId
+        obraId,
       );
 
       if (result) {
-        const erros = validatedRows.filter(r => r.status === "erro").length;
+        const erros = validatedRows.filter((r) => r.status === "erro").length;
         toast.success(
-          `Importação concluída: ${result.novos} novos, ${result.atualizados} atualizados, ${result.desligados} desligados${erros > 0 ? `, ${erros} erros ignorados` : ""}`
+          `Importação concluída: ${result.novos} novos, ${result.atualizados} atualizados, ${result.desligados} desligados.`,
         );
-        
         setValidatedRows([]);
         setDesligamentosPrevistos(0);
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -401,204 +325,168 @@ export function ImportarColaboradoresDialog({
         onOpenChange(false);
       }
     } catch (error) {
-      console.error("Erro ao importar:", error);
-      toast.error("Erro ao importar colaboradores");
+      console.error("Erro:", error);
+      toast.error("Erro ao importar");
     }
   };
 
-  const baixarErros = () => {
-    const erros = validatedRows.filter(r => r.status === "erro");
-    const ws = XLSX.utils.json_to_sheet(
-      erros.map(r => ({
-        Linha: r.linha,
-        Nome: r.nome,
-        CPF: r.cpf,
-        Erros: r.erros?.join("; ") || "",
-      }))
-    );
-    
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Erros");
-    XLSX.writeFile(wb, "erros_importacao.xlsx");
-  };
-
-  const novos = validatedRows.filter(r => r.status === "novo");
-  const atualizados = validatedRows.filter(r => r.status === "atualizado");
-  const erros = validatedRows.filter(r => r.status === "erro");
-  
-  const rowsFiltradas = filtroStatus === "todos" 
-    ? validatedRows 
-    : validatedRows.filter(r => r.status === filtroStatus);
+  const rowsFiltradas =
+    filtroStatus === "todos" ? validatedRows : validatedRows.filter((r) => r.status === filtroStatus);
+  const totalPages = Math.ceil(rowsFiltradas.length / ITEMS_PER_PAGE);
+  const paginatedRows = rowsFiltradas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lista de {competencia}</DialogTitle>
-          <DialogDescription>
-            Faça o upload de um arquivo .xlsx com a lista completa de colaboradores. 
-            Esta lista é a <strong>verdade absoluta</strong> para este mês: colaboradores ausentes serão marcados como desligados.
-          </DialogDescription>
+          <DialogDescription>Carregue o arquivo .xlsx. Esta lista será a verdade absoluta do mês.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           <div className="flex gap-3 flex-wrap">
-            <Button onClick={baixarModelo} variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Baixar Modelo (.xlsx)
+            <Button onClick={baixarModelo} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" /> Baixar Modelo
             </Button>
-            
-            <Button onClick={() => fileInputRef.current?.click()} disabled={processing || importing}>
-              <Upload className="h-4 w-4 mr-2" />
-              {processing ? "Processando..." : "Selecionar Arquivo"}
+            <Button onClick={() => fileInputRef.current?.click()} disabled={processing || importing} size="sm">
+              <Upload className="h-4 w-4 mr-2" /> {processing ? "Processando..." : "Selecionar Arquivo"}
             </Button>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              onChange={handleFileChange}
-              className="hidden"
-            />
+            <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFileChange} className="hidden" />
           </div>
 
           {validatedRows.length > 0 && (
             <>
+              {/* Cards de Resumo */}
               <div className="grid gap-3 md:grid-cols-5">
-                <Alert 
-                  className={`cursor-pointer transition-all ${filtroStatus === "todos" ? "border-foreground ring-2 ring-foreground" : "border-muted hover:border-foreground"}`}
-                  onClick={() => setFiltroStatus("todos")}
+                <Alert
+                  className={`cursor-pointer py-2 ${filtroStatus === "todos" ? "border-foreground ring-1 ring-foreground" : "border-muted"}`}
+                  onClick={() => {
+                    setFiltroStatus("todos");
+                    setCurrentPage(1);
+                  }}
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   <AlertDescription>
                     <strong>{validatedRows.length}</strong> total
                   </AlertDescription>
                 </Alert>
-                
-                <Alert 
-                  className={`cursor-pointer transition-all ${filtroStatus === "novo" ? "border-success ring-2 ring-success" : "border-success/50 hover:border-success"}`}
-                  onClick={() => setFiltroStatus("novo")}
+                <Alert
+                  className={`cursor-pointer py-2 ${filtroStatus === "novo" ? "border-green-500 ring-1 ring-green-500" : "border-green-200"}`}
+                  onClick={() => {
+                    setFiltroStatus("novo");
+                    setCurrentPage(1);
+                  }}
                 >
-                  <CheckCircle className="h-4 w-4 text-success" />
+                  <CheckCircle className="h-4 w-4 text-green-500" />
                   <AlertDescription>
-                    <strong>{novos.length}</strong> novos
+                    <strong>{validatedRows.filter((r) => r.status === "novo").length}</strong> novos
                   </AlertDescription>
                 </Alert>
-                
-                <Alert 
-                  className={`cursor-pointer transition-all ${filtroStatus === "atualizado" ? "border-primary ring-2 ring-primary" : "border-primary/50 hover:border-primary"}`}
-                  onClick={() => setFiltroStatus("atualizado")}
+                <Alert
+                  className={`cursor-pointer py-2 ${filtroStatus === "atualizado" ? "border-blue-500 ring-1 ring-blue-500" : "border-blue-200"}`}
+                  onClick={() => {
+                    setFiltroStatus("atualizado");
+                    setCurrentPage(1);
+                  }}
                 >
-                  <FileSpreadsheet className="h-4 w-4 text-primary" />
+                  <FileSpreadsheet className="h-4 w-4 text-blue-500" />
                   <AlertDescription>
-                    <strong>{atualizados.length}</strong> atualizações
+                    <strong>{validatedRows.filter((r) => r.status === "atualizado").length}</strong> atualiz.
                   </AlertDescription>
                 </Alert>
-                
-                <Alert 
-                  className={`cursor-pointer transition-all ${filtroStatus === "erro" ? "border-destructive ring-2 ring-destructive" : "border-destructive/50 hover:border-destructive"}`}
-                  onClick={() => setFiltroStatus("erro")}
+                <Alert
+                  className={`cursor-pointer py-2 ${filtroStatus === "erro" ? "border-red-500 ring-1 ring-red-500" : "border-red-200"}`}
+                  onClick={() => {
+                    setFiltroStatus("erro");
+                    setCurrentPage(1);
+                  }}
                 >
-                  <AlertCircle className="h-4 w-4 text-destructive" />
+                  <AlertCircle className="h-4 w-4 text-red-500" />
                   <AlertDescription>
-                    <strong>{erros.length}</strong> erros
+                    <strong>{validatedRows.filter((r) => r.status === "erro").length}</strong> erros
                   </AlertDescription>
                 </Alert>
-
                 {desligamentosPrevistos > 0 && (
-                  <Alert className="border-orange-500/50 bg-orange-500/5">
-                    <UserMinus className="h-4 w-4 text-orange-600" />
+                  <Alert className="py-2 border-orange-200 bg-orange-50">
+                    <UserMinus className="h-4 w-4 text-orange-500" />
                     <AlertDescription>
-                      <strong>{desligamentosPrevistos}</strong> desligamentos
+                      <strong>{desligamentosPrevistos}</strong> deslig.
                     </AlertDescription>
                   </Alert>
                 )}
               </div>
 
-              {desligamentosPrevistos > 0 && (
-                <Alert className="border-orange-500/30 bg-orange-500/5">
-                  <AlertCircle className="h-4 w-4 text-orange-600" />
-                  <AlertDescription className="text-orange-700">
-                    <strong>{desligamentosPrevistos} colaborador(es)</strong> ativo(s) não estão na lista e serão marcados como <strong>desligados</strong> ao confirmar a importação.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="rounded-lg border max-h-96 overflow-y-auto">
+              {/* Tabela Paginada */}
+              <div className="rounded-lg border">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Linha</TableHead>
-                      <TableHead>Status</TableHead>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="w-[50px]">Ln</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
                       <TableHead>Detalhes</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rowsFiltradas.map((row, idx) => (
+                    {paginatedRows.map((row, idx) => (
                       <TableRow key={idx}>
                         <TableCell>{row.linha}</TableCell>
                         <TableCell>
-                          {row.status === "novo" && (
-                            <Badge variant="default" className="bg-success">Novo</Badge>
-                          )}
-                          {row.status === "atualizado" && (
-                            <Badge variant="secondary">Atualizado</Badge>
-                          )}
-                          {row.status === "erro" && (
-                            <Badge variant="destructive">Erro</Badge>
-                          )}
+                          {row.status === "novo" && <Badge className="bg-green-500">Novo</Badge>}
+                          {row.status === "atualizado" && <Badge variant="secondary">Atualizado</Badge>}
+                          {row.status === "erro" && <Badge variant="destructive">Erro</Badge>}
                         </TableCell>
-                        <TableCell>{row.nome}</TableCell>
+                        <TableCell className="font-medium">{row.nome}</TableCell>
                         <TableCell>{formatCPF(row.cpf)}</TableCell>
-                        <TableCell className="text-sm">
-                          {row.status === "erro" && row.erros && (
-                            <ul className="text-destructive space-y-1">
-                              {row.erros.map((erro, i) => (
-                                <li key={i}>• {erro}</li>
-                              ))}
-                            </ul>
-                          )}
-                          {row.status === "atualizado" && row.alteracoes && (
-                            <ul className="text-muted-foreground space-y-1">
-                              {row.alteracoes.map((alt, i) => (
-                                <li key={i}>• {alt}</li>
-                              ))}
-                            </ul>
-                          )}
-                          {row.status === "novo" && (
-                            <span className="text-muted-foreground">
-                              Salário: R$ {row.salario.toFixed(2)} → {calcularClassificacaoSalario(row.salario)}
-                            </span>
-                          )}
+                        <TableCell className="text-sm text-muted-foreground">
+                          {row.status === "erro" &&
+                            row.erros?.map((e, i) => (
+                              <div key={i} className="text-red-500">
+                                • {e}
+                              </div>
+                            ))}
+                          {row.status === "atualizado" && row.alteracoes?.map((a, i) => <div key={i}>• {a}</div>)}
+                          {row.status === "novo" && <span>R$ {row.salario.toFixed(2)}</span>}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Paginação */}
+              {totalPages > 1 && (
+                <Pagination className="justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                    <span className="text-sm mx-4">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
             </>
           )}
         </div>
 
-        <DialogFooter>
-          {erros.length > 0 && (
-            <Button onClick={baixarErros} variant="outline">
-              <FileWarning className="h-4 w-4 mr-2" />
-              Baixar Erros
-            </Button>
-          )}
-          
+        <DialogFooter className="mt-4 pt-4 border-t">
           <Button onClick={() => onOpenChange(false)} variant="outline">
             Cancelar
           </Button>
-          
-          <Button
-            onClick={confirmarImportacao}
-            disabled={validatedRows.length === 0 || (novos.length === 0 && atualizados.length === 0) || importing}
-          >
-            {importing ? "Importando..." : `Confirmar Importação (${novos.length + atualizados.length} ativos${desligamentosPrevistos > 0 ? `, ${desligamentosPrevistos} deslig.` : ""})`}
+          <Button onClick={confirmarImportacao} disabled={validatedRows.length === 0 || importing}>
+            {importing ? "Importando..." : "Confirmar Importação"}
           </Button>
         </DialogFooter>
       </DialogContent>
