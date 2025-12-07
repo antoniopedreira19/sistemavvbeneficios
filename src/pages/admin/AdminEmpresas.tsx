@@ -6,17 +6,14 @@ import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
 import { CRMList } from "@/components/crm/CRMList";
 import { CRMKanban } from "@/components/crm/CRMKanban";
 import { CRMInactiveList } from "@/components/crm/CRMInactiveList";
-
 export default function AdminEmpresas() {
   const [isNovaEmpresaOpen, setIsNovaEmpresaOpen] = useState(false);
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+  return <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">Empresas & CRM</h1>
+            <h1 className="text-3xl font-bold">Empresas</h1>
             <p className="text-muted-foreground">Gerencie sua carteira de clientes, inativos e funil de vendas.</p>
           </div>
         </div>
@@ -35,10 +32,7 @@ export default function AdminEmpresas() {
           </TabsTrigger>
 
           {/* 2. INATIVOS (Movido para o meio) */}
-          <TabsTrigger
-            value="inativos"
-            className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-red-600"
-          >
+          <TabsTrigger value="inativos" className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-red-600">
             <ArchiveX className="h-4 w-4" />
             Inativas
           </TabsTrigger>
@@ -64,6 +58,5 @@ export default function AdminEmpresas() {
       </Tabs>
 
       <NovaEmpresaDialog open={isNovaEmpresaOpen} onOpenChange={setIsNovaEmpresaOpen} />
-    </div>
-  );
+    </div>;
 }
