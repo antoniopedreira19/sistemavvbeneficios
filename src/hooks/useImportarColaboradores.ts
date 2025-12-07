@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 
 interface ColaboradorImport {
   nome: string;
@@ -21,109 +20,99 @@ export function useImportarColaboradores() {
   const [importing, setImporting] = useState(false);
 
   /**
-   * ATUALIZAR COLABORADORES (SEM CRIAR LOTE):
-   * Apenas atualiza a tabela mestra de colaboradores
-   * 1. Upsert na tabela mestra (colaboradores) - atualiza ou cria
-   * 2. Marca como desligado quem NÃO está na lista atual
-   * 
-   * NÃO cria lote, NÃO cria snapshots - isso é feito no Painel ao enviar
+   * ATUALIZAR COLABORADORES EM LOTE (BATCH):
+   * Reduz drasticamente o tempo de processamento enviando blocos de 1000 registros.
    */
   const atualizarColaboradores = async (
     colaboradores: ColaboradorImport[],
     empresaId: string,
-    obraId: string
+    obraId: string,
   ): Promise<ImportResult | null> => {
     setImporting(true);
-    
+
     try {
-      const cpfsNaLista = new Set(colaboradores.map(c => c.cpf));
-      
-      // 1. Buscar colaboradores ATIVOS atuais desta obra
+      const cpfsNaLista = new Set(colaboradores.map((c) => c.cpf));
+
+      // 1. Buscar TODOS os colaboradores ativos atuais para comparar
+      // Nota: Se a base for gigantesca (+50k), precisaria paginar, mas para importação mensal é ok.
       const { data: colaboradoresAtuais, error: fetchError } = await supabase
         .from("colaboradores")
-        .select("id, cpf, nome, sexo, data_nascimento, salario, classificacao_salario")
+        .select("id, cpf")
         .eq("empresa_id", empresaId)
         .eq("obra_id", obraId)
         .eq("status", "ativo");
 
       if (fetchError) throw fetchError;
 
-      const colaboradoresMap = new Map(
-        (colaboradoresAtuais || []).map(c => [c.cpf, c])
-      );
+      const colaboradoresMap = new Map((colaboradoresAtuais || []).map((c) => [c.cpf, c]));
 
+      // 2. Preparar os dados para UPSERT (Inserir ou Atualizar)
+      const upsertData: any[] = [];
       let novos = 0;
       let atualizados = 0;
 
-      // 2. UPSERT: Para cada colaborador na lista
       for (const colab of colaboradores) {
         const existente = colaboradoresMap.get(colab.cpf);
 
-        if (existente) {
-          // Atualizar colaborador existente
-          const { error: updateError } = await supabase
-            .from("colaboradores")
-            .update({
-              nome: colab.nome,
-              sexo: colab.sexo,
-              data_nascimento: colab.data_nascimento,
-              salario: colab.salario,
-              classificacao_salario: colab.classificacao_salario,
-              status: "ativo", // Garantir que está ativo
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", existente.id);
+        const dadosBase = {
+          nome: colab.nome,
+          sexo: colab.sexo,
+          cpf: colab.cpf, // Necessário para insert
+          data_nascimento: colab.data_nascimento,
+          salario: colab.salario,
+          classificacao_salario: colab.classificacao_salario,
+          classificacao: "CLT",
+          aposentado: false,
+          afastado: false,
+          empresa_id: empresaId,
+          obra_id: obraId,
+          status: "ativo",
+          updated_at: new Date().toISOString(),
+        };
 
-          if (updateError) throw updateError;
+        if (existente) {
+          // Se existe, adicionamos o ID para que o Supabase entenda que é um UPDATE
+          upsertData.push({ ...dadosBase, id: existente.id });
           atualizados++;
         } else {
-          // Criar novo colaborador
-          const { error: insertError } = await supabase
-            .from("colaboradores")
-            .insert({
-              nome: colab.nome,
-              sexo: colab.sexo,
-              cpf: colab.cpf,
-              data_nascimento: colab.data_nascimento,
-              salario: colab.salario,
-              classificacao_salario: colab.classificacao_salario,
-              classificacao: "CLT",
-              aposentado: false,
-              afastado: false,
-              empresa_id: empresaId,
-              obra_id: obraId,
-              status: "ativo",
-            });
-
-          if (insertError) throw insertError;
+          // Se não existe, vai sem ID (o banco gera) -> INSERT
+          upsertData.push(dadosBase);
           novos++;
         }
       }
 
-      // 3. DESLIGAMENTOS: Marcar como desligado quem NÃO está na lista
-      const cpfsParaDesligar = (colaboradoresAtuais || [])
-        .filter(c => !cpfsNaLista.has(c.cpf))
-        .map(c => c.id);
+      // 3. Executar UPSERT em blocos (Chunks) de 1000 para não estourar o limite de payload
+      const chunkSize = 1000;
+      for (let i = 0; i < upsertData.length; i += chunkSize) {
+        const chunk = upsertData.slice(i, i + chunkSize);
 
-      let desligados = 0;
-      if (cpfsParaDesligar.length > 0) {
-        const { error: desligarError } = await supabase
-          .from("colaboradores")
-          .update({ 
-            status: "desligado",
-            updated_at: new Date().toISOString() 
-          })
-          .in("id", cpfsParaDesligar);
+        const { error: upsertError } = await supabase.from("colaboradores").upsert(chunk); // Upsert lida com Insert e Update numa tacada só
 
-        if (desligarError) throw desligarError;
-        desligados = cpfsParaDesligar.length;
+        if (upsertError) throw upsertError;
       }
 
-      return {
-        novos,
-        atualizados,
-        desligados,
-      };
+      // 4. DESLIGAMENTOS: Marcar quem não veio na lista
+      const idsParaDesligar = (colaboradoresAtuais || []).filter((c) => !cpfsNaLista.has(c.cpf)).map((c) => c.id);
+
+      let desligados = 0;
+      if (idsParaDesligar.length > 0) {
+        // Também fazer em lotes se forem muitos desligamentos
+        for (let i = 0; i < idsParaDesligar.length; i += chunkSize) {
+          const chunkIds = idsParaDesligar.slice(i, i + chunkSize);
+          const { error: desligarError } = await supabase
+            .from("colaboradores")
+            .update({
+              status: "desligado",
+              updated_at: new Date().toISOString(),
+            })
+            .in("id", chunkIds);
+
+          if (desligarError) throw desligarError;
+        }
+        desligados = idsParaDesligar.length;
+      }
+
+      return { novos, atualizados, desligados };
     } catch (error) {
       console.error("Erro ao atualizar colaboradores:", error);
       throw error;
