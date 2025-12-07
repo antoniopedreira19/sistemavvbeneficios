@@ -46,7 +46,7 @@ export default function AdminEmpresas() {
           {/* 3. CRM (Movido para o fim) */}
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <KanbanSquare className="h-4 w-4" />
-            CRM (Funil)
+            CRM
           </TabsTrigger>
         </TabsList>
 
