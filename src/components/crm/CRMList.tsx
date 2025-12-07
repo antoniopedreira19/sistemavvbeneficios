@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Mail, Phone, MoreHorizontal, FileText, Users } from "lucide-react";
@@ -14,10 +13,22 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const ITEMS_PER_PAGE = 50;
 
 export function CRMList() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-ativas"],
@@ -29,9 +40,21 @@ export function CRMList() {
     },
   });
 
-  const filteredEmpresas = empresas?.filter(
-    (empresa) => empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm),
-  );
+  // Filtragem
+  const filteredEmpresas =
+    empresas?.filter(
+      (empresa) => empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm),
+    ) || [];
+
+  // Lógica de Paginação
+  const totalPages = Math.ceil(filteredEmpresas.length / ITEMS_PER_PAGE);
+  const paginatedEmpresas = filteredEmpresas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // Rola para o topo da tabela ao mudar de página
+    document.getElementById("crm-list-top")?.scrollIntoView({ behavior: "smooth" });
+  };
 
   if (isLoading)
     return (
@@ -42,7 +65,7 @@ export function CRMList() {
     );
 
   return (
-    <Card>
+    <Card id="crm-list-top">
       <CardHeader>
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -55,7 +78,10 @@ export function CRMList() {
               placeholder="Buscar por nome ou CNPJ..."
               className="pl-8"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Resetar paginação ao filtrar
+              }}
             />
           </div>
         </CardTitle>
@@ -65,42 +91,51 @@ export function CRMList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Empresa</TableHead>
-                <TableHead>Responsável</TableHead>
-                <TableHead>Contato</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                {/* Larguras fixas para estabilidade */}
+                <TableHead className="w-[35%]">Empresa</TableHead>
+                <TableHead className="w-[20%]">Responsável</TableHead>
+                <TableHead className="w-[25%]">Contato</TableHead>
+                <TableHead className="w-[10%] text-center">Status</TableHead>
+                <TableHead className="w-[10%] text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEmpresas?.length === 0 ? (
+              {paginatedEmpresas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     Nenhuma empresa encontrada na carteira.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredEmpresas?.map((empresa) => (
+                paginatedEmpresas.map((empresa) => (
                   <TableRow key={empresa.id}>
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-base">{empresa.nome}</span>
+                      <div className="flex flex-col max-w-[280px]">
+                        <span className="font-medium text-base truncate" title={empresa.nome}>
+                          {empresa.nome}
+                        </span>
                         <span className="text-xs text-muted-foreground font-mono">{empresa.cnpj}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
+                      <div className="truncate max-w-[180px]" title={empresa.nome_responsavel || ""}>
+                        {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-1 text-sm">
+                      <div className="flex flex-col gap-1 text-sm max-w-[220px]">
                         {empresa.email_contato && (
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Mail className="h-3 w-3" /> {empresa.email_contato}
+                          <div
+                            className="flex items-center gap-1 text-muted-foreground truncate"
+                            title={empresa.email_contato}
+                          >
+                            <Mail className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{empresa.email_contato}</span>
                           </div>
                         )}
                         {empresa.telefone_contato && (
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Phone className="h-3 w-3" /> {empresa.telefone_contato}
+                          <div className="flex items-center gap-1 text-muted-foreground truncate">
+                            <Phone className="h-3 w-3 shrink-0" /> {empresa.telefone_contato}
                           </div>
                         )}
                       </div>
@@ -138,6 +173,33 @@ export function CRMList() {
             </TableBody>
           </Table>
         </div>
+
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="mt-4">
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+
+                <span className="text-sm text-muted-foreground px-4">
+                  Página {currentPage} de {totalPages}
+                </span>
+
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
