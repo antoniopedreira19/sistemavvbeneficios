@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -131,6 +132,9 @@ const EmpresaDetailDialog = ({
                 Editar
               </Button>
             </DialogTitle>
+            <DialogDescription>
+              Visualize e gerencie informações da empresa
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
@@ -252,17 +256,19 @@ const EmpresaDetailDialog = ({
             <div className="border-t pt-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide">
-                  Status
+                  Status no CRM
                 </Label>
                 <Select value={empresa.status} onValueChange={handleStatusChange}>
                   <SelectTrigger>
-                    <SelectValue>
-                      <Badge
-                        variant="outline"
-                        className={STATUS_BADGE_VARIANTS[empresa.status] || "bg-muted text-muted-foreground"}
-                      >
-                        {statusLabels[empresa.status] || empresa.status}
-                      </Badge>
+                    <SelectValue placeholder="Selecione o status">
+                      {empresa.status && (
+                        <Badge
+                          variant="outline"
+                          className={STATUS_BADGE_VARIANTS[empresa.status] || "bg-muted text-muted-foreground"}
+                        >
+                          {statusLabels[empresa.status] || empresa.status}
+                        </Badge>
+                      )}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
