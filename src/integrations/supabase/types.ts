@@ -287,6 +287,7 @@ export type Database = {
       empresas: {
         Row: {
           cnpj: string
+          contrato_url: string | null
           created_at: string
           email_contato: string | null
           emails_contato: Json | null
@@ -301,6 +302,7 @@ export type Database = {
         }
         Insert: {
           cnpj: string
+          contrato_url?: string | null
           created_at?: string
           email_contato?: string | null
           emails_contato?: Json | null
@@ -315,6 +317,7 @@ export type Database = {
         }
         Update: {
           cnpj?: string
+          contrato_url?: string | null
           created_at?: string
           email_contato?: string | null
           emails_contato?: Json | null
