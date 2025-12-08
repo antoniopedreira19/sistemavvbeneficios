@@ -38,13 +38,14 @@ export function CRMList() {
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-ativas"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("empresas").select("*").eq("status", "ativa" as any).order("nome");
+      const { data, error } = await supabase
+        .from("empresas")
+        .select("*")
+        .eq("status", "ativa")
+        .order("nome");
 
       if (error) throw error;
-      return (data || []).map(e => ({
-        ...e,
-        status_crm: (e as any).status_crm || 'empresa_ativa'
-      })) as EmpresaCRM[];
+      return (data || []) as EmpresaCRM[];
     },
   });
 
@@ -52,7 +53,7 @@ export function CRMList() {
     mutationFn: async ({ empresaId, newStatus }: { empresaId: string; newStatus: string }) => {
       const { error } = await supabase
         .from("empresas")
-        .update({ status_crm: newStatus } as any)
+        .update({ status: newStatus as any })
         .eq("id", empresaId);
       if (error) throw error;
     },

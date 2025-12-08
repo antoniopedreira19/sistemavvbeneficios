@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { User, Mail, Phone, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
+import { EmpresaCRM, CRM_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
 import { UploadContratoDialog } from "./UploadContratoDialog";
 
@@ -19,7 +19,6 @@ const CRM_COLUMNS = [
   { id: "contrato_assinado", title: "Contrato Assinado", color: "bg-blue-500" },
   { id: "apolices_emitida", title: "Apólices Emitida", color: "bg-purple-500" },
   { id: "acolhimento", title: "Acolhimento", color: "bg-teal-500" },
-  { id: "empresa_ativa", title: "Empresa Ativa", color: "bg-green-500" },
 ];
 
 const formatCNPJ = (val: string) =>
@@ -106,14 +105,11 @@ export function CRMKanban() {
       const { data, error } = await supabase
         .from("empresas")
         .select("*")
-        .eq("status", "em_implementacao" as any)
+        .in("status", CRM_FUNNEL_STATUSES)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return (data || []).map(e => ({
-        ...e,
-        status_crm: (e as any).status_crm || 'tratativa'
-      })) as EmpresaCRM[];
+      return (data || []) as EmpresaCRM[];
     },
   });
 
@@ -131,8 +127,8 @@ export function CRMKanban() {
   }, [empresas, searchTerm]);
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status_crm }: { id: string; status_crm: string }) => {
-      const { error } = await supabase.from("empresas").update({ status_crm } as any).eq("id", id);
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { error } = await supabase.from("empresas").update({ status }).eq("id", id);
       if (error) throw error;
     },
     onError: () => {
@@ -157,10 +153,10 @@ export function CRMKanban() {
       if (!movedEmpresa) return old;
 
       // Update the status
-      movedEmpresa.status_crm = newStatus;
+      movedEmpresa.status = newStatus as EmpresaCRM["status"];
 
       // Get items in destination column (excluding the moved item)
-      const destItems = updated.filter((e) => e.status_crm === newStatus && e.id !== draggableId);
+      const destItems = updated.filter((e) => e.status === newStatus && e.id !== draggableId);
 
       // Build new array maintaining order
       const resultArray: EmpresaCRM[] = [];
@@ -169,7 +165,7 @@ export function CRMKanban() {
         const columnItems =
           column.id === newStatus
             ? [...destItems.slice(0, destination.index), movedEmpresa, ...destItems.slice(destination.index)]
-            : updated.filter((e) => e.status_crm === column.id && e.id !== draggableId);
+            : updated.filter((e) => e.status === column.id && e.id !== draggableId);
 
         resultArray.push(...columnItems);
       }
@@ -180,7 +176,7 @@ export function CRMKanban() {
     // Fire mutation
     updateStatusMutation.mutate({
       id: draggableId,
-      status_crm: newStatus,
+      status: newStatus,
     });
   };
 
@@ -219,7 +215,7 @@ export function CRMKanban() {
   };
 
   const getColumnEmpresas = (statusId: string) => {
-    return filteredEmpresas.filter((e) => e.status_crm === statusId);
+    return filteredEmpresas.filter((e) => e.status === statusId);
   };
 
   if (isLoading) {
@@ -347,11 +343,11 @@ export function CRMKanban() {
         onUpdateStatus={(empresaId, newStatus) => {
           // Se está mudando para "contrato_assinado", abre modal de upload
           const empresa = filteredEmpresas.find((e) => e.id === empresaId);
-          if (newStatus === "contrato_assinado" && empresa?.status_crm !== "contrato_assinado" && empresa) {
+          if (newStatus === "contrato_assinado" && empresa?.status !== "contrato_assinado" && empresa) {
             setEmpresaParaContrato(empresa);
             setPendingDragResult({
               destination: { droppableId: newStatus, index: 0 },
-              source: { droppableId: empresa.status_crm, index: 0 },
+              source: { droppableId: empresa.status, index: 0 },
               draggableId: empresaId,
               type: "DEFAULT",
               mode: "FLUID",
@@ -365,9 +361,9 @@ export function CRMKanban() {
           
           queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
             if (!old) return old;
-            return old.map((e) => (e.id === empresaId ? { ...e, status_crm: newStatus } : e));
+            return old.map((e) => (e.id === empresaId ? { ...e, status: newStatus as any } : e));
           });
-          updateStatusMutation.mutate({ id: empresaId, status_crm: newStatus });
+          updateStatusMutation.mutate({ id: empresaId, status: newStatus });
         }}
         onEmpresaUpdated={() => {
           queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
