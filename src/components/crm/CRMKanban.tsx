@@ -11,6 +11,7 @@ import { User, Mail, Phone, Search, ChevronLeft, ChevronRight } from "lucide-rea
 import { toast } from "sonner";
 import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
+import { UploadContratoDialog } from "./UploadContratoDialog";
 
 const CRM_COLUMNS = [
   { id: "sem_retorno", title: "Sem Retorno", color: "bg-slate-500" },
@@ -83,6 +84,9 @@ export function CRMKanban() {
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [empresaParaContrato, setEmpresaParaContrato] = useState<EmpresaCRM | null>(null);
+  const [pendingDragResult, setPendingDragResult] = useState<DropResult | null>(null);
 
   const scrollLeft = () => {
     if (scrollContainerRef.current) {
@@ -134,11 +138,10 @@ export function CRMKanban() {
     },
   });
 
-  const handleDragEnd = (result: DropResult) => {
+  const executeDragUpdate = (result: DropResult) => {
     const { destination, source, draggableId } = result;
 
     if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
     const newStatus = destination.droppableId;
 
@@ -156,12 +159,8 @@ export function CRMKanban() {
       // Get items in destination column (excluding the moved item)
       const destItems = updated.filter((e) => e.status_crm === newStatus && e.id !== draggableId);
 
-      // Calculate new order by adjusting created_at to position correctly
-      // We'll use a simple approach: reorder the array based on destination index
-      const sourceItems = updated.filter((e) => e.status_crm === source.droppableId && e.id !== draggableId);
-
       // Build new array maintaining order
-      const result: EmpresaCRM[] = [];
+      const resultArray: EmpresaCRM[] = [];
 
       for (const column of CRM_COLUMNS) {
         const columnItems =
@@ -169,10 +168,10 @@ export function CRMKanban() {
             ? [...destItems.slice(0, destination.index), movedEmpresa, ...destItems.slice(destination.index)]
             : updated.filter((e) => e.status_crm === column.id && e.id !== draggableId);
 
-        result.push(...columnItems);
+        resultArray.push(...columnItems);
       }
 
-      return result;
+      return resultArray;
     });
 
     // Fire mutation
@@ -180,6 +179,40 @@ export function CRMKanban() {
       id: draggableId,
       status_crm: newStatus,
     });
+  };
+
+  const handleDragEnd = (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+
+    const newStatus = destination.droppableId;
+    const empresa = filteredEmpresas.find((e) => e.id === draggableId);
+
+    // Se está indo para "contrato_assinado", abre modal de upload
+    if (newStatus === "contrato_assinado" && source.droppableId !== "contrato_assinado" && empresa) {
+      setEmpresaParaContrato(empresa);
+      setPendingDragResult(result);
+      setUploadDialogOpen(true);
+      return;
+    }
+
+    executeDragUpdate(result);
+  };
+
+  const handleUploadSuccess = () => {
+    if (pendingDragResult) {
+      executeDragUpdate(pendingDragResult);
+      setPendingDragResult(null);
+    }
+    setEmpresaParaContrato(null);
+    queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
+  };
+
+  const handleUploadCancel = () => {
+    setPendingDragResult(null);
+    setEmpresaParaContrato(null);
   };
 
   const getColumnEmpresas = (statusId: string) => {
@@ -309,6 +342,24 @@ export function CRMKanban() {
         onOpenChange={(open) => !open && setSelectedEmpresa(null)}
         statusLabels={CRM_STATUS_LABELS}
         onUpdateStatus={(empresaId, newStatus) => {
+          // Se está mudando para "contrato_assinado", abre modal de upload
+          const empresa = filteredEmpresas.find((e) => e.id === empresaId);
+          if (newStatus === "contrato_assinado" && empresa?.status_crm !== "contrato_assinado" && empresa) {
+            setEmpresaParaContrato(empresa);
+            setPendingDragResult({
+              destination: { droppableId: newStatus, index: 0 },
+              source: { droppableId: empresa.status_crm, index: 0 },
+              draggableId: empresaId,
+              type: "DEFAULT",
+              mode: "FLUID",
+              reason: "DROP",
+              combine: null,
+            });
+            setUploadDialogOpen(true);
+            setSelectedEmpresa(null);
+            return;
+          }
+          
           queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
             if (!old) return old;
             return old.map((e) => (e.id === empresaId ? { ...e, status_crm: newStatus } : e));
@@ -318,6 +369,17 @@ export function CRMKanban() {
         onEmpresaUpdated={() => {
           queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
         }}
+      />
+
+      <UploadContratoDialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          setUploadDialogOpen(open);
+          if (!open) handleUploadCancel();
+        }}
+        empresaId={empresaParaContrato?.id || ""}
+        empresaNome={empresaParaContrato?.nome || ""}
+        onSuccess={handleUploadSuccess}
       />
     </>
   );

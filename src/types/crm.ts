@@ -9,6 +9,7 @@ export interface EmpresaCRM {
   created_at: string;
   emails_contato?: string[];
   telefones_contato?: string[];
+  contrato_url?: string | null;
 }
 
 export const CRM_STATUS_LABELS: Record<string, string> = {

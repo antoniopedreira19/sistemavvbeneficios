@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Mail, Phone, MoreHorizontal, FileText, Users, Eye } from "lucide-react";
+import { Search, Mail, Phone, MoreHorizontal, Users, Eye } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -193,9 +193,6 @@ export function CRMList() {
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(empresa.cnpj); toast.success("CNPJ copiado!"); }}>
                               Copiar CNPJ
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                              <FileText className="mr-2 h-4 w-4" /> Ver Contrato/Lotes
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
