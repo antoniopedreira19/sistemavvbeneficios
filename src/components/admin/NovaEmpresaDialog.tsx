@@ -66,7 +66,7 @@ export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresa
           email_contato: data.email_contato,
           telefone_contato: data.telefone_contato,
           status: data.status,
-        },
+        } as any,
       ]);
 
       if (error) throw error;

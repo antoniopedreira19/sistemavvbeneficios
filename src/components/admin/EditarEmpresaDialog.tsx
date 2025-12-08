@@ -125,7 +125,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
           telefones_contato: validTelefones,
           status: data.status,
           ...statusCrmUpdate,
-        })
+        } as any)
         .eq("id", empresa.id);
 
       if (error) throw error;

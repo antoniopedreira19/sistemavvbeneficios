@@ -6,6 +6,7 @@ export interface EmpresaCRM {
   telefone_contato: string | null;
   nome_responsavel: string | null;
   status_crm: string;
+  status?: string;
   created_at: string;
   emails_contato?: string[];
   telefones_contato?: string[];

@@ -232,17 +232,14 @@ serve(async (req) => {
     const accessToken = await getGoogleAccessToken(credentials)
     console.log('Autenticação Google realizada com sucesso')
 
-    // 2. Buscar ou Criar a Pasta Mãe "CONTRATOS VV BENEFÍCIOS"
-    const MAIN_FOLDER_NAME = 'CONTRATOS VV BENEFÍCIOS'
-    let mainFolderId = await findFolder(accessToken, MAIN_FOLDER_NAME)
-
+    // 2. Usar a pasta raiz configurada via env
+    const mainFolderId = Deno.env.get('GOOGLE_DRIVE_FOLDER_ID')
     if (!mainFolderId) {
-      console.log(`Criando pasta raiz: ${MAIN_FOLDER_NAME}`)
-      mainFolderId = await createFolder(accessToken, MAIN_FOLDER_NAME)
+      throw new Error('GOOGLE_DRIVE_FOLDER_ID não configurada')
     }
-    console.log(`Pasta raiz: ${mainFolderId}`)
+    console.log(`Usando pasta raiz: ${mainFolderId}`)
 
-    // 3. Buscar ou Criar a Subpasta da Empresa
+    // 3. Buscar ou Criar a Subpasta da Empresa dentro da pasta compartilhada
     const subFolderName = `CONTRATO_${empresaNome.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
     let subFolderId = await findFolder(accessToken, subFolderName, mainFolderId)
 
