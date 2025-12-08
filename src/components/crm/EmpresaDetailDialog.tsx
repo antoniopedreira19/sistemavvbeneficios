@@ -58,6 +58,39 @@ const EmpresaDetailDialog = ({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [competencias, setCompetencias] = useState<LoteCompetencia[]>([]);
   const [loadingCompetencias, setLoadingCompetencias] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadContrato = async () => {
+    if (!empresa?.contrato_url) return;
+    setDownloading(true);
+    try {
+      // Verifica se é URL do Supabase Storage
+      if (empresa.contrato_url.includes("supabase.co/storage")) {
+        const path = empresa.contrato_url.split("/contratos/").pop();
+        if (!path) throw new Error("Caminho inválido");
+
+        const { data, error } = await supabase.storage.from("contratos").download(decodeURIComponent(path));
+        if (error) throw error;
+
+        const url = window.URL.createObjectURL(data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = path;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        // URL do Google Drive ou outra - abre diretamente
+        window.open(empresa.contrato_url, "_blank");
+      }
+    } catch (error) {
+      console.error("Erro no download:", error);
+      window.open(empresa.contrato_url, "_blank");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     if (open && empresa) {
@@ -220,7 +253,7 @@ const EmpresaDetailDialog = ({
                   <FileText className="h-3 w-3" />
                   Contrato
                 </Label>
-                {empresa.contrato_url ? (
+{empresa.contrato_url ? (
                   <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800">
                     <FileText className="h-4 w-4 text-green-600 shrink-0 dark:text-green-400" />
                     <span className="text-sm text-green-700 font-medium flex-1 dark:text-green-300">Contrato Anexado</span>
@@ -228,22 +261,19 @@ const EmpresaDetailDialog = ({
                       <Button
                         variant="ghost"
                         size="sm"
-                        asChild
+                        onClick={() => window.open(empresa.contrato_url!, "_blank")}
                         className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
                       >
-                        <a href={empresa.contrato_url} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
-                        </a>
+                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        asChild
+                        onClick={handleDownloadContrato}
+                        disabled={downloading}
                         className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
                       >
-                        <a href={`${empresa.contrato_url}?download=`} download>
-                          <Download className="h-3.5 w-3.5 mr-1" /> Baixar
-                        </a>
+                        <Download className="h-3.5 w-3.5 mr-1" /> {downloading ? "..." : "Baixar"}
                       </Button>
                     </div>
                   </div>
