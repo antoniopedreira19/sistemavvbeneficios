@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -19,16 +19,29 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import EmpresaDetailDialog from "@/components/crm/EmpresaDetailDialog";
+import { EmpresaCRM } from "@/types/crm";
+import { toast } from "sonner";
 
 const ITEMS_PER_PAGE = 50;
+
+const STATUS_LABELS: Record<string, string> = {
+  tratativa: "Tratativa",
+  negociacao: "Negociação",
+  fechamento: "Fechamento",
+  empresa_ativa: "Empresa Ativa",
+  perdido: "Perdido",
+};
 
 export function CRMInactiveList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
@@ -39,6 +52,30 @@ export function CRMInactiveList() {
       return data;
     },
   });
+
+  const handleViewDetails = (empresa: EmpresaCRM) => {
+    setSelectedEmpresa(empresa);
+    setDetailDialogOpen(true);
+  };
+
+  const handleUpdateStatus = async (empresaId: string, newStatus: string) => {
+    const { error } = await supabase
+      .from("empresas")
+      .update({ status_crm: newStatus })
+      .eq("id", empresaId);
+
+    if (error) {
+      toast.error("Erro ao atualizar status");
+      return;
+    }
+
+    toast.success("Status atualizado com sucesso");
+    queryClient.invalidateQueries({ queryKey: ["empresas-inativas"] });
+  };
+
+  const handleEmpresaUpdated = () => {
+    queryClient.invalidateQueries({ queryKey: ["empresas-inativas"] });
+  };
 
   // Filtragem
   const filteredEmpresas =
@@ -106,7 +143,11 @@ export function CRMInactiveList() {
                 </TableRow>
               ) : (
                 paginatedEmpresas.map((empresa) => (
-                  <TableRow key={empresa.id}>
+                  <TableRow 
+                    key={empresa.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleViewDetails(empresa as EmpresaCRM)}
+                  >
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-medium text-base">{empresa.nome}</span>
@@ -139,7 +180,7 @@ export function CRMInactiveList() {
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" className="h-8 w-8 p-0">
                             <span className="sr-only">Abrir menu</span>
                             <MoreHorizontal className="h-4 w-4" />
@@ -147,10 +188,21 @@ export function CRMInactiveList() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(empresa.cnpj)}>
+                          <DropdownMenuItem onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(empresa.cnpj);
+                          }}>
                             Copiar CNPJ
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-primary font-medium">Ver Detalhes</DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-primary font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewDetails(empresa as EmpresaCRM);
+                            }}
+                          >
+                            Ver Detalhes
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -187,6 +239,15 @@ export function CRMInactiveList() {
             </Pagination>
           </div>
         )}
+
+        <EmpresaDetailDialog
+          empresa={selectedEmpresa}
+          open={detailDialogOpen}
+          onOpenChange={setDetailDialogOpen}
+          statusLabels={STATUS_LABELS}
+          onUpdateStatus={handleUpdateStatus}
+          onEmpresaUpdated={handleEmpresaUpdated}
+        />
       </CardContent>
     </Card>
   );
