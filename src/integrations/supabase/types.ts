@@ -295,7 +295,6 @@ export type Database = {
           nome: string
           nome_responsavel: string | null
           status: Database["public"]["Enums"]["empresa_status"]
-          status_crm: string
           telefone_contato: string | null
           telefones_contato: Json | null
           updated_at: string
@@ -310,7 +309,6 @@ export type Database = {
           nome: string
           nome_responsavel?: string | null
           status?: Database["public"]["Enums"]["empresa_status"]
-          status_crm?: string
           telefone_contato?: string | null
           telefones_contato?: Json | null
           updated_at?: string
@@ -325,7 +323,6 @@ export type Database = {
           nome?: string
           nome_responsavel?: string | null
           status?: Database["public"]["Enums"]["empresa_status"]
-          status_crm?: string
           telefone_contato?: string | null
           telefones_contato?: Json | null
           updated_at?: string
@@ -772,7 +769,15 @@ export type Database = {
     Enums: {
       app_role: "admin" | "cliente" | "operacional" | "financeiro"
       colaborador_status: "ativo" | "desligado"
-      empresa_status: "ativa" | "em_implementacao"
+      empresa_status:
+        | "sem_retorno"
+        | "tratativa"
+        | "contrato_assinado"
+        | "apolices_emitida"
+        | "acolhimento"
+        | "ativa"
+        | "inativa"
+        | "cancelada"
       lote_status:
         | "rascunho"
         | "aguardando_processamento"
@@ -911,7 +916,16 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "cliente", "operacional", "financeiro"],
       colaborador_status: ["ativo", "desligado"],
-      empresa_status: ["ativa", "em_implementacao"],
+      empresa_status: [
+        "sem_retorno",
+        "tratativa",
+        "contrato_assinado",
+        "apolices_emitida",
+        "acolhimento",
+        "ativa",
+        "inativa",
+        "cancelada",
+      ],
       lote_status: [
         "rascunho",
         "aguardando_processamento",
