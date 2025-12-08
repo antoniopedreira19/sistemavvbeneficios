@@ -22,7 +22,7 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["ativa", "em_implementacao", "inativa", "cancelada"]),
+  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
@@ -147,9 +147,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
-      let statusCrmUpdate = {};
-      if (data.status === "inativa" || data.status === "cancelada") statusCrmUpdate = { status_crm: "cancelada" };
-      else if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
 
       const { error } = await supabase
         .from("empresas")
@@ -162,7 +159,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: data.status,
-          ...statusCrmUpdate,
         })
         .eq("id", empresa.id);
 
@@ -346,9 +342,14 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
+                      <option value="sem_retorno">📞 Sem Retorno</option>
+                      <option value="tratativa">💬 Em Tratativa</option>
+                      <option value="contrato_assinado">📝 Contrato Assinado</option>
+                      <option value="apolices_emitida">📋 Apólices Emitida</option>
+                      <option value="acolhimento">🤝 Acolhimento</option>
                       <option value="ativa">✅ Ativa</option>
-                      <option value="inativa">🚫 Inativa / Cancelada</option>
+                      <option value="inativa">⏸️ Inativa</option>
+                      <option value="cancelada">🚫 Cancelada</option>
                     </select>
                     <FormMessage />
                   </FormItem>
