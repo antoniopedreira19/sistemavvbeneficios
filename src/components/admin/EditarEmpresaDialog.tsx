@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus, X, UploadCloud, FileText, Loader2, ExternalLink } from "lucide-react";
 
+// Schema e Tipos
 const empresaSchema = z.object({
   nome: z.string().trim().min(1, "Nome é obrigatório").max(200, "Nome muito longo"),
   nome_responsavel: z.string().trim().max(200, "Nome muito longo").optional().or(z.literal("")),
@@ -21,13 +22,26 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
+  status: z.enum(["ativa", "em_implementacao", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
 
+interface Empresa {
+  id: string;
+  nome: string;
+  nome_responsavel: string | null;
+  cnpj: string;
+  email_contato: string | null;
+  telefone_contato: string | null;
+  emails_contato?: any;
+  telefones_contato?: any;
+  status: string;
+  contrato_url?: string | null;
+}
+
 interface EditarEmpresaDialogProps {
-  empresa: any;
+  empresa: Empresa;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
@@ -46,7 +60,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     defaultValues: {
       nome: "",
       cnpj: "",
-      status: "sem_retorno",
+      status: "ativa",
     },
   });
 
@@ -58,7 +72,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
         cnpj: empresa.cnpj,
         email_contato: empresa.email_contato || "",
         telefone_contato: empresa.telefone_contato || "",
-        status: empresa.status,
+        status: empresa.status as any,
       });
 
       const existingEmails = empresa.emails_contato || [];
@@ -70,45 +84,72 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     }
   }, [empresa, form]);
 
+  // --- NOVO UPLOAD (SUPABASE STORAGE) ---
   const handleContractUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      toast({ title: "Arquivo muito grande", description: "Limite de 15MB.", variant: "destructive" });
+    // Limite de 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 10MB.", variant: "destructive" });
       return;
     }
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("empresaId", empresa.id);
-      formData.append("empresaNome", empresa.nome);
+      // 1. Definir nome do arquivo: contratos/CONTRATO_NOME_DATA.pdf
+      const fileExt = file.name.split(".").pop();
+      const cleanName = empresa.nome.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+      const fileName = `CONTRATO_${cleanName}_${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`; // Salva na raiz do bucket 'contratos'
 
-      const { data, error } = await supabase.functions.invoke("upload-contract", {
-        body: formData,
+      // 2. Upload Direto
+      const { error: uploadError } = await supabase.storage.from("contratos").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
       });
 
-      if (error) throw error;
+      if (uploadError) throw uploadError;
 
-      setContratoUrl(data.url);
-      toast({ title: "Contrato enviado!", description: "Salvo no Google Drive com sucesso." });
+      // 3. Pegar URL Pública
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("contratos").getPublicUrl(filePath);
+
+      // 4. Salvar URL no Banco
+      const { error: dbError } = await supabase
+        .from("empresas")
+        .update({ contrato_url: publicUrl })
+        .eq("id", empresa.id);
+
+      if (dbError) throw dbError;
+
+      setContratoUrl(publicUrl);
+      toast({ title: "Contrato salvo!", description: "Arquivo armazenado com sucesso." });
       onSuccess?.();
     } catch (error: any) {
       console.error(error);
-      toast({ title: "Erro no upload", description: "Falha na conexão com o servidor.", variant: "destructive" });
+      toast({
+        title: "Erro no upload",
+        description: error.message || "Falha ao salvar arquivo.",
+        variant: "destructive",
+      });
     } finally {
       setUploading(false);
       event.target.value = "";
     }
   };
 
+  // --- Lógica de Edição Normal ---
   const onSubmit = async (data: EmpresaFormData) => {
     setLoading(true);
     try {
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
+
+      let statusCrmUpdate = {};
+      if (data.status === "inativa" || data.status === "cancelada") statusCrmUpdate = { status_crm: "cancelada" };
+      else if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
 
       const { error } = await supabase
         .from("empresas")
@@ -121,6 +162,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: data.status,
+          ...statusCrmUpdate,
         })
         .eq("id", empresa.id);
 
@@ -136,6 +178,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     }
   };
 
+  // Helpers
   const addEmail = () => setEmails((p) => [...p, ""]);
   const removeEmail = (i: number) => setEmails(emails.filter((_, idx) => idx !== i));
   const updateEmail = (i: number, v: string) => {
@@ -155,7 +198,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
-        <DialogHeader>
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Editar Empresa</DialogTitle>
           <DialogDescription>Gerencie dados cadastrais e contratos.</DialogDescription>
         </DialogHeader>
@@ -183,7 +226,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                       className="h-7 px-2 hover:bg-green-50 text-green-700 ml-2"
                     >
                       <a href={contratoUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Abrir no Drive
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Abrir
                       </a>
                     </Button>
                   </div>
@@ -239,18 +282,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                 />
                 <FormField
                   control={form.control}
-                  name="nome_responsavel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Responsável</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
                   name="cnpj"
                   render={({ field }) => (
                     <FormItem>
@@ -259,6 +290,18 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                         <Input {...field} onChange={(e) => field.onChange(formatCNPJ(e.target.value))} maxLength={18} />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="nome_responsavel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Responsável</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
@@ -303,24 +346,16 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <optgroup label="Funil CRM">
-                        <option value="sem_retorno">🔘 Sem Retorno</option>
-                        <option value="tratativa">💬 Em Tratativa</option>
-                        <option value="contrato_assinado">📝 Contrato Assinado</option>
-                        <option value="apolices_emitida">📄 Apólices Emitida</option>
-                        <option value="acolhimento">🤝 Acolhimento</option>
-                      </optgroup>
-                      <optgroup label="Status Final">
-                        <option value="ativa">✅ Ativa</option>
-                        <option value="inativa">⏸️ Inativa</option>
-                        <option value="cancelada">❌ Cancelada</option>
-                      </optgroup>
+                      <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
+                      <option value="ativa">✅ Ativa</option>
+                      <option value="inativa">🚫 Inativa / Cancelada</option>
                     </select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
+              {/* Emails/Telefones Adicionais */}
               <div className="space-y-4 border-t pt-4">
                 <div className="space-y-2">
                   <span className="text-xs uppercase text-muted-foreground font-bold">Emails Adicionais</span>
@@ -348,7 +383,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                     <Plus className="h-3 w-3 mr-2" /> Adicionar Email
                   </Button>
                 </div>
-
                 <div className="space-y-2">
                   <span className="text-xs uppercase text-muted-foreground font-bold">Telefones Adicionais</span>
                   {telefones.map((tel, i) => (
