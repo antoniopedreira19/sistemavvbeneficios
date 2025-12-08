@@ -249,26 +249,23 @@ export function CRMInactiveList() {
 
 // Helper para colorir os badges conforme o status
 function StatusBadge({ status }: { status: string }) {
-  if (status === "inativa") {
-    return (
-      <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 whitespace-nowrap">
-        Inativa
-      </Badge>
-    );
-  }
-  if (status === "cancelada") {
-    return (
-      <Badge
-        variant="destructive"
-        className="bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 whitespace-nowrap"
-      >
-        Cancelada
-      </Badge>
-    );
-  }
+  const STATUS_COLORS: Record<string, string> = {
+    sem_retorno: "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200",
+    tratativa: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100",
+    contrato_assinado: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+    apolices_emitida: "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100",
+    acolhimento: "bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100",
+    ativa: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100",
+    inativa: "bg-red-50 text-red-700 border-red-200 hover:bg-red-100",
+    cancelada: "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100",
+  };
+
+  const label = CRM_STATUS_LABELS[status] || status;
+  const colorClass = STATUS_COLORS[status] || "bg-muted text-muted-foreground";
+
   return (
-    <Badge variant="secondary" className="whitespace-nowrap">
-      {status}
+    <Badge variant="outline" className={`whitespace-nowrap ${colorClass}`}>
+      {label}
     </Badge>
   );
 }
