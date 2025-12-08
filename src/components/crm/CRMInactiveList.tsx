@@ -39,11 +39,7 @@ export function CRMInactiveList() {
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
       // Mostra todas empresas que NÃO são ativas
-      const { data, error } = await supabase
-        .from("empresas")
-        .select("*")
-        .neq("status", "ativa")
-        .order("nome");
+      const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa").order("nome");
 
       if (error) throw error;
       return (data || []) as EmpresaCRM[];
@@ -102,7 +98,7 @@ export function CRMInactiveList() {
         <CardTitle className="flex justify-between items-center text-slate-700">
           <div className="flex items-center gap-2">
             <ArchiveX className="h-5 w-5 text-slate-500" />
-            Empresas Inativas / Canceladas ({empresas?.length || 0})
+            Empresas Inativas ({empresas?.length || 0})
           </div>
           <div className="relative w-72">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
@@ -139,8 +135,8 @@ export function CRMInactiveList() {
                 </TableRow>
               ) : (
                 paginatedEmpresas.map((empresa) => (
-                  <TableRow 
-                    key={empresa.id} 
+                  <TableRow
+                    key={empresa.id}
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleViewDetails(empresa)}
                   >
@@ -184,13 +180,15 @@ export function CRMInactiveList() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(empresa.cnpj);
-                          }}>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(empresa.cnpj);
+                            }}
+                          >
                             Copiar CNPJ
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-primary font-medium"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -260,7 +258,10 @@ function StatusBadge({ status }: { status: string }) {
   }
   if (status === "cancelada") {
     return (
-      <Badge variant="destructive" className="bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 whitespace-nowrap">
+      <Badge
+        variant="destructive"
+        className="bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 whitespace-nowrap"
+      >
         Cancelada
       </Badge>
     );
