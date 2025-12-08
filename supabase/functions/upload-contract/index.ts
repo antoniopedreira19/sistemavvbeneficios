@@ -1,10 +1,197 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { google } from "https://esm.sh/googleapis@126.0.1"
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Função para converter para base64url
+function base64url(data: Uint8Array): string {
+  return base64Encode(data.buffer as ArrayBuffer)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+// Função para criar JWT para Service Account do Google
+async function createGoogleJWT(credentials: { client_email: string; private_key: string }): Promise<string> {
+  const header = { alg: 'RS256', typ: 'JWT' }
+  const now = Math.floor(Date.now() / 1000)
+  const payload = {
+    iss: credentials.client_email,
+    scope: 'https://www.googleapis.com/auth/drive',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  }
+
+  const encodedHeader = base64url(new TextEncoder().encode(JSON.stringify(header)))
+  const encodedPayload = base64url(new TextEncoder().encode(JSON.stringify(payload)))
+  const signatureInput = `${encodedHeader}.${encodedPayload}`
+
+  // Importar a chave privada
+  const pemContents = credentials.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\n/g, '')
+
+  const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0))
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    binaryKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(signatureInput)
+  )
+
+  const encodedSignature = base64url(new Uint8Array(signature))
+  return `${signatureInput}.${encodedSignature}`
+}
+
+// Função para obter access token do Google
+async function getGoogleAccessToken(credentials: { client_email: string; private_key: string }): Promise<string> {
+  const jwt = await createGoogleJWT(credentials)
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Falha na autenticação Google: ${errorText}`)
+  }
+
+  const data = await response.json()
+  return data.access_token
+}
+
+// Função para buscar pasta por nome
+async function findFolder(accessToken: string, name: string, parentId?: string): Promise<string | null> {
+  let query = `mimeType='application/vnd.google-apps.folder' and name='${name}' and trashed=false`
+  if (parentId) {
+    query += ` and '${parentId}' in parents`
+  }
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Erro ao buscar pasta: ${errorText}`)
+  }
+
+  const data = await response.json()
+  return data.files && data.files.length > 0 ? data.files[0].id : null
+}
+
+// Função para criar pasta
+async function createFolder(accessToken: string, name: string, parentId?: string): Promise<string> {
+  const metadata: Record<string, unknown> = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+  }
+  if (parentId) {
+    metadata.parents = [parentId]
+  }
+
+  const response = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(metadata),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Erro ao criar pasta: ${errorText}`)
+  }
+
+  const data = await response.json()
+  return data.id
+}
+
+// Função para upload de arquivo
+async function uploadFile(
+  accessToken: string,
+  fileName: string,
+  fileContent: ArrayBuffer,
+  mimeType: string,
+  parentId: string
+): Promise<{ id: string; webViewLink: string }> {
+  const metadata = {
+    name: fileName,
+    parents: [parentId],
+  }
+
+  // Usar multipart upload
+  const boundary = '-------314159265358979323846'
+  const delimiter = `\r\n--${boundary}\r\n`
+  const closeDelimiter = `\r\n--${boundary}--`
+
+  const metadataPart = `${delimiter}Content-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}`
+  const contentPart = `${delimiter}Content-Type: ${mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n`
+
+  const base64Content = btoa(
+    new Uint8Array(fileContent).reduce((data, byte) => data + String.fromCharCode(byte), '')
+  )
+
+  const multipartBody = metadataPart + contentPart + base64Content + closeDelimiter
+
+  const response = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: multipartBody,
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Erro ao fazer upload: ${errorText}`)
+  }
+
+  return await response.json()
+}
+
+// Função para definir permissões
+async function setPublicPermission(accessToken: string, fileId: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Erro ao definir permissões: ${errorText}`)
+  }
 }
 
 serve(async (req) => {
@@ -15,7 +202,7 @@ serve(async (req) => {
 
   try {
     console.log('Iniciando upload de contrato...')
-    
+
     const formData = await req.formData()
     const file = formData.get('file') as File
     const empresaId = formData.get('empresaId') as string
@@ -32,103 +219,42 @@ serve(async (req) => {
     if (!credentialsJson) {
       throw new Error('GOOGLE_CREDENTIALS não configurada')
     }
-    
-    const credentials = JSON.parse(credentialsJson)
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    })
-    const drive = google.drive({ version: 'v3', auth })
 
+    const credentials = JSON.parse(credentialsJson)
+    const accessToken = await getGoogleAccessToken(credentials)
     console.log('Autenticação Google realizada com sucesso')
 
     // 2. Buscar ou Criar a Pasta Mãe "CONTRATOS VV BENEFÍCIOS"
     const MAIN_FOLDER_NAME = 'CONTRATOS VV BENEFÍCIOS'
-    let mainFolderId = ''
-    
-    const mainFolderSearch = await drive.files.list({
-      q: `mimeType='application/vnd.google-apps.folder' and name='${MAIN_FOLDER_NAME}' and trashed=false`,
-      fields: 'files(id, name)',
-    })
+    let mainFolderId = await findFolder(accessToken, MAIN_FOLDER_NAME)
 
-    if (mainFolderSearch.data.files && mainFolderSearch.data.files.length > 0) {
-      mainFolderId = mainFolderSearch.data.files[0].id!
-      console.log(`Pasta raiz encontrada: ${mainFolderId}`)
-    } else {
+    if (!mainFolderId) {
       console.log(`Criando pasta raiz: ${MAIN_FOLDER_NAME}`)
-      const folder = await drive.files.create({
-        requestBody: {
-          name: MAIN_FOLDER_NAME,
-          mimeType: 'application/vnd.google-apps.folder',
-        },
-        fields: 'id',
-      })
-      mainFolderId = folder.data.id!
-      console.log(`Pasta raiz criada: ${mainFolderId}`)
+      mainFolderId = await createFolder(accessToken, MAIN_FOLDER_NAME)
     }
+    console.log(`Pasta raiz: ${mainFolderId}`)
 
-    // 3. Buscar ou Criar a Subpasta da Empresa DENTRO da Pasta Mãe
+    // 3. Buscar ou Criar a Subpasta da Empresa
     const subFolderName = `CONTRATO_${empresaNome.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
-    let subFolderId = ''
+    let subFolderId = await findFolder(accessToken, subFolderName, mainFolderId)
 
-    const subFolderSearch = await drive.files.list({
-      q: `mimeType='application/vnd.google-apps.folder' and name='${subFolderName}' and '${mainFolderId}' in parents and trashed=false`,
-      fields: 'files(id, name)',
-    })
-
-    if (subFolderSearch.data.files && subFolderSearch.data.files.length > 0) {
-      subFolderId = subFolderSearch.data.files[0].id!
-      console.log(`Subpasta encontrada: ${subFolderId}`)
-    } else {
+    if (!subFolderId) {
       console.log(`Criando subpasta: ${subFolderName}`)
-      const folder = await drive.files.create({
-        requestBody: {
-          name: subFolderName,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [mainFolderId],
-        },
-        fields: 'id',
-      })
-      subFolderId = folder.data.id!
-      console.log(`Subpasta criada: ${subFolderId}`)
+      subFolderId = await createFolder(accessToken, subFolderName, mainFolderId)
     }
+    console.log(`Subpasta: ${subFolderId}`)
 
     // 4. Upload do Arquivo
     console.log(`Fazendo upload do arquivo: ${file.name}`)
     const arrayBuffer = await file.arrayBuffer()
-    
-    // Criar readable stream a partir do buffer
-    const readable = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new Uint8Array(arrayBuffer))
-        controller.close()
-      }
-    })
-
-    const uploadedFile = await drive.files.create({
-      requestBody: {
-        name: file.name,
-        parents: [subFolderId],
-      },
-      media: {
-        mimeType: file.type,
-        body: readable,
-      },
-      fields: 'id, webViewLink',
-    })
-
-    console.log(`Arquivo uploaded: ${uploadedFile.data.id}`)
+    const uploadedFile = await uploadFile(accessToken, file.name, arrayBuffer, file.type, subFolderId)
+    console.log(`Arquivo uploaded: ${uploadedFile.id}`)
 
     // 5. Configurar Permissões (público com link)
-    await drive.permissions.create({
-      fileId: uploadedFile.data.id!,
-      requestBody: { 
-        role: 'reader', 
-        type: 'anyone' 
-      },
-    })
+    await setPublicPermission(accessToken, uploadedFile.id)
+    console.log(`Permissões configuradas`)
 
-    const contratoUrl = uploadedFile.data.webViewLink
+    const contratoUrl = uploadedFile.webViewLink
     console.log(`URL do contrato: ${contratoUrl}`)
 
     // 6. Atualizar Banco de Dados
@@ -150,24 +276,23 @@ serve(async (req) => {
     console.log('Contrato salvo com sucesso!')
 
     return new Response(
-      JSON.stringify({ 
-        message: 'Upload realizado com sucesso', 
-        url: contratoUrl 
+      JSON.stringify({
+        message: 'Upload realizado com sucesso',
+        url: contratoUrl,
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
-        status: 200 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
       }
     )
-
   } catch (error: unknown) {
     console.error('Erro no upload:', error)
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
-        status: 400 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
       }
     )
   }
