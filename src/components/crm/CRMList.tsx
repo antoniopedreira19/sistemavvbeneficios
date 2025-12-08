@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -24,14 +24,27 @@ import {
 } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
-import { EmpresaCRM } from "@/types/crm";
+import EmpresaDetailDialog from "@/components/crm/EmpresaDetailDialog"; // Importando o modal de detalhes
+
+// Mapa completo de status para o modal
+const UNIFIED_STATUS_LABELS: Record<string, string> = {
+  sem_retorno: "Sem Retorno",
+  tratativa: "Em Tratativa",
+  contrato_assinado: "Contrato Assinado",
+  apolices_emitida: "Apólices Emitidas",
+  acolhimento: "Acolhimento",
+  ativa: "Ativa",
+  inativa: "Inativa",
+  cancelada: "Cancelada",
+};
 
 const ITEMS_PER_PAGE = 50;
 
 export function CRMList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [empresaParaEditar, setEmpresaParaEditar] = useState<any | null>(null);
+  const [empresaParaEditar, setEmpresaParaEditar] = useState<any | null>(null); // Para modal de edição direta
+  const [selectedEmpresa, setSelectedEmpresa] = useState<any | null>(null); // Para modal de detalhes
   const queryClient = useQueryClient();
 
   const { data: empresas, isLoading } = useQuery({
@@ -39,8 +52,27 @@ export function CRMList() {
     queryFn: async () => {
       const { data, error } = await supabase.from("empresas").select("*").eq("status", "ativa").order("nome");
       if (error) throw error;
-      return data as EmpresaCRM[];
+      return data;
     },
+  });
+
+  // Mutação para atualizar status via Modal de Detalhes
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { error } = await supabase
+        .from("empresas")
+        .update({ status: status as any })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      queryClient.invalidateQueries({ queryKey: ["empresas-inativas"] });
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+      toast.success("Status atualizado!");
+      setSelectedEmpresa(null); // Fecha o modal se o status mudar (pois sai da lista)
+    },
+    onError: () => toast.error("Erro ao atualizar status."),
   });
 
   const filteredEmpresas =
@@ -107,7 +139,11 @@ export function CRMList() {
                 </TableRow>
               ) : (
                 paginatedEmpresas.map((empresa) => (
-                  <TableRow key={empresa.id} className="hover:bg-muted/50">
+                  <TableRow
+                    key={empresa.id}
+                    className="hover:bg-muted/50 cursor-pointer" // Cursor pointer para indicar clique
+                    onClick={() => setSelectedEmpresa(empresa)} // CLIQUE NA LINHA ABRE DETALHES
+                  >
                     <TableCell>
                       <div className="flex flex-col max-w-[280px]">
                         <span className="font-medium text-base truncate" title={empresa.nome}>
@@ -135,7 +171,6 @@ export function CRMList() {
                       </div>
                     </TableCell>
 
-                    {/* --- AQUI ESTÁ O BADGE --- */}
                     <TableCell className="text-center">
                       <div className="flex flex-col items-center gap-1.5">
                         <Badge
@@ -144,7 +179,6 @@ export function CRMList() {
                         >
                           Ativa
                         </Badge>
-                        {/* Só mostra se tiver contrato_url */}
                         {empresa.contrato_url && (
                           <Badge
                             variant="outline"
@@ -155,7 +189,6 @@ export function CRMList() {
                         )}
                       </div>
                     </TableCell>
-                    {/* ------------------------- */}
 
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -165,8 +198,11 @@ export function CRMList() {
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => setSelectedEmpresa(empresa)}>
+                            <Eye className="mr-2 h-4 w-4" /> Ver Detalhes
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setEmpresaParaEditar(empresa)}>
                             <FileText className="mr-2 h-4 w-4" /> Editar / Contrato
                           </DropdownMenuItem>
@@ -212,12 +248,25 @@ export function CRMList() {
         )}
       </CardContent>
 
+      {/* MODAL DE EDIÇÃO DIRETA */}
       {empresaParaEditar && (
         <EditarEmpresaDialog
           open={!!empresaParaEditar}
           onOpenChange={(open) => !open && setEmpresaParaEditar(null)}
           empresa={empresaParaEditar}
           onSuccess={() => queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] })}
+        />
+      )}
+
+      {/* MODAL DE DETALHES (Read-only + Ações) */}
+      {selectedEmpresa && (
+        <EmpresaDetailDialog
+          open={!!selectedEmpresa}
+          onOpenChange={(open) => !open && setSelectedEmpresa(null)}
+          empresa={selectedEmpresa}
+          statusLabels={UNIFIED_STATUS_LABELS}
+          onUpdateStatus={(id, status) => updateStatusMutation.mutate({ id, status })}
+          onEmpresaUpdated={() => queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] })}
         />
       )}
     </Card>
