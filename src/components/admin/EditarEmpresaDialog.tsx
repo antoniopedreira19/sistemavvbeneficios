@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, X, UploadCloud, FileText, Loader2, Download, ExternalLink } from "lucide-react";
+import { Plus, X, UploadCloud, FileText, Loader2, Download, ExternalLink, Trash2 } from "lucide-react";
 
 // Schema e Tipos
 const empresaSchema = z.object({
@@ -135,6 +135,14 @@ export const EditarEmpresaDialog = ({
 
     setUploading(true);
     try {
+      // Se já existe contrato, remove o arquivo antigo do Storage
+      if (empresa.contrato_url?.includes("supabase.co/storage")) {
+        const oldPath = empresa.contrato_url.split("/contratos/").pop();
+        if (oldPath) {
+          await supabase.storage.from("contratos").remove([decodeURIComponent(oldPath)]);
+        }
+      }
+
       const fileExt = file.name.split(".").pop();
       const cleanName = empresa.nome.toUpperCase().replace(/[^A-Z0-9]/g, "_");
       const fileName = `CONTRATO_${cleanName}_${Date.now()}.${fileExt}`;
@@ -174,6 +182,44 @@ export const EditarEmpresaDialog = ({
     } finally {
       setUploading(false);
       event.target.value = "";
+    }
+  };
+
+  // --- EXCLUIR CONTRATO ---
+  const handleDeleteContract = async () => {
+    if (!empresa.contrato_url) return;
+
+    if (!confirm("Tem certeza que deseja excluir o contrato?")) return;
+
+    setUploading(true);
+    try {
+      // Remove do Storage se for URL do Supabase
+      if (empresa.contrato_url.includes("supabase.co/storage")) {
+        const path = empresa.contrato_url.split("/contratos/").pop();
+        if (path) {
+          const { error: deleteError } = await supabase.storage.from("contratos").remove([decodeURIComponent(path)]);
+          if (deleteError) console.error("Erro ao remover arquivo:", deleteError);
+        }
+      }
+
+      // Remove referência no banco
+      const { error: dbError } = await supabase
+        .from("empresas")
+        .update({ contrato_url: null })
+        .eq("id", empresa.id);
+
+      if (dbError) throw dbError;
+
+      queryClient.invalidateQueries({ queryKey: ["empresa-detail", empresa.id] });
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+
+      toast({ title: "Contrato excluído", description: "O arquivo foi removido com sucesso." });
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -266,7 +312,7 @@ export const EditarEmpresaDialog = ({
                         onClick={handleDownload}
                         disabled={downloading}
                       >
-                        {downloading ? (
+                      {downloading ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Download className="h-3.5 w-3.5 mr-1.5" />
@@ -274,11 +320,22 @@ export const EditarEmpresaDialog = ({
                         Baixar
                       </Button>
 
-                      {/* Botão de Abrir Externo (Opcional) */}
+                      {/* Botão de Abrir Externo */}
                       <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-green-50 text-green-700" asChild>
                         <a href={empresa.contrato_url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
+                      </Button>
+
+                      {/* Botão de Excluir */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 hover:bg-red-50 text-red-600"
+                        onClick={handleDeleteContract}
+                        disabled={uploading}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
