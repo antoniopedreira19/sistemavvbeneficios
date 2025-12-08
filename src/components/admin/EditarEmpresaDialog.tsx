@@ -3,13 +3,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { validateCNPJ, formatCNPJ, formatTelefone } from "@/lib/validators";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, X, UploadCloud, FileText, Loader2, ExternalLink } from "lucide-react";
+import { Plus, X, UploadCloud, FileText, Loader2, Download, ExternalLink } from "lucide-react";
 
 // Schema e Tipos
 const empresaSchema = z.object({
@@ -22,38 +23,43 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
+  status: z.enum(["ativa", "em_implementacao", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
 
-interface Empresa {
-  id: string;
-  nome: string;
-  nome_responsavel: string | null;
-  cnpj: string;
-  email_contato: string | null;
-  telefone_contato: string | null;
-  emails_contato?: any;
-  telefones_contato?: any;
-  status: string;
-  contrato_url?: string | null;
-}
-
 interface EditarEmpresaDialogProps {
-  empresa: Empresa;
+  empresa: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
 }
 
-export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: EditarEmpresaDialogProps) => {
+export const EditarEmpresaDialog = ({
+  empresa: initialEmpresa,
+  open,
+  onOpenChange,
+  onSuccess,
+}: EditarEmpresaDialogProps) => {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [emails, setEmails] = useState<string[]>([]);
   const [telefones, setTelefones] = useState<string[]>([]);
-  const [contratoUrl, setContratoUrl] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // 1. REALTIME: Busca dados frescos sempre que o modal abre
+  const { data: empresa } = useQuery({
+    queryKey: ["empresa-detail", initialEmpresa.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("empresas").select("*").eq("id", initialEmpresa.id).single();
+      if (error) throw error;
+      return data;
+    },
+    initialData: initialEmpresa, // Usa o que veio por prop enquanto carrega
+    enabled: open, // Só busca se estiver aberto
+  });
 
   const form = useForm<EmpresaFormData>({
     resolver: zodResolver(empresaSchema),
@@ -78,18 +84,50 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
       const existingEmails = empresa.emails_contato || [];
       const existingTelefones = empresa.telefones_contato || [];
 
-      setEmails(existingEmails.filter((e: string) => e !== empresa.email_contato));
-      setTelefones(existingTelefones.filter((t: string) => t !== empresa.telefone_contato));
-      setContratoUrl(empresa.contrato_url);
+      setEmails(existingEmails.filter((e: any) => e !== empresa.email_contato));
+      setTelefones(existingTelefones.filter((t: any) => t !== empresa.telefone_contato));
     }
   }, [empresa, form]);
 
-  // --- NOVO UPLOAD (SUPABASE STORAGE) ---
+  // --- DOWNLOAD INTELIGENTE (Evita Bloqueio do Chrome) ---
+  const handleDownload = async () => {
+    if (!empresa.contrato_url) return;
+    setDownloading(true);
+
+    try {
+      // Extrai o caminho do arquivo da URL pública
+      // Ex: .../public/contratos/ARQUIVO.pdf -> ARQUIVO.pdf
+      const path = empresa.contrato_url.split("/contratos/").pop();
+      if (!path) throw new Error("Caminho do arquivo inválido");
+
+      const { data, error } = await supabase.storage.from("contratos").download(decodeURIComponent(path));
+
+      if (error) throw error;
+
+      // Cria um link temporário para forçar o download
+      const url = window.URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = path; // Nome do arquivo
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Erro no download:", error);
+      // Fallback: tenta abrir em nova aba se o download falhar
+      window.open(empresa.contrato_url, "_blank");
+      toast({ title: "Erro no download", description: "Tentando abrir em nova aba...", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // --- UPLOAD (Supabase Storage) ---
   const handleContractUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Limite de 10MB
     if (file.size > 10 * 1024 * 1024) {
       toast({ title: "Arquivo muito grande", description: "Máximo 10MB.", variant: "destructive" });
       return;
@@ -97,26 +135,21 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
 
     setUploading(true);
     try {
-      // 1. Definir nome do arquivo: contratos/CONTRATO_NOME_DATA.pdf
       const fileExt = file.name.split(".").pop();
       const cleanName = empresa.nome.toUpperCase().replace(/[^A-Z0-9]/g, "_");
       const fileName = `CONTRATO_${cleanName}_${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`; // Salva na raiz do bucket 'contratos'
 
-      // 2. Upload Direto
-      const { error: uploadError } = await supabase.storage.from("contratos").upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: true,
-      });
+      // Upload
+      const { error: uploadError } = await supabase.storage.from("contratos").upload(fileName, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // 3. Pegar URL Pública
+      // Pegar URL
       const {
         data: { publicUrl },
-      } = supabase.storage.from("contratos").getPublicUrl(filePath);
+      } = supabase.storage.from("contratos").getPublicUrl(fileName);
 
-      // 4. Salvar URL no Banco
+      // Salvar no Banco
       const { error: dbError } = await supabase
         .from("empresas")
         .update({ contrato_url: publicUrl })
@@ -124,7 +157,11 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
 
       if (dbError) throw dbError;
 
-      setContratoUrl(publicUrl);
+      // Atualiza caches para refletir na hora (Realtime)
+      queryClient.invalidateQueries({ queryKey: ["empresa-detail", empresa.id] });
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+
       toast({ title: "Contrato salvo!", description: "Arquivo armazenado com sucesso." });
       onSuccess?.();
     } catch (error: any) {
@@ -140,13 +177,16 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     }
   };
 
-  // --- Lógica de Edição Normal ---
+  // --- SUBMIT DO FORMULÁRIO ---
   const onSubmit = async (data: EmpresaFormData) => {
     setLoading(true);
     try {
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
+      let statusCrmUpdate = {};
+      if (data.status === "inativa" || data.status === "cancelada") statusCrmUpdate = { status_crm: "cancelada" };
+      else if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
 
       const { error } = await supabase
         .from("empresas")
@@ -159,12 +199,18 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: data.status,
+          ...statusCrmUpdate,
         })
         .eq("id", empresa.id);
 
       if (error) throw error;
 
       toast({ title: "Empresa atualizada!", description: "Dados salvos com sucesso." });
+
+      // Atualiza listas principais
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+
       onOpenChange(false);
       onSuccess?.();
     } catch (error: any) {
@@ -174,7 +220,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     }
   };
 
-  // Helpers
+  // Helpers de Array
   const addEmail = () => setEmails((p) => [...p, ""]);
   const removeEmail = (i: number) => setEmails(emails.filter((_, idx) => idx !== i));
   const updateEmail = (i: number, v: string) => {
@@ -200,7 +246,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
         </DialogHeader>
 
         <div className="overflow-y-auto flex-1 px-1 pr-2 space-y-6">
-          {/* CARD DE CONTRATO */}
+          {/* CARD DE CONTRATO (Área Realtime) */}
           <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 shadow-sm mt-2">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-700">
               <FileText className="h-4 w-4 text-primary" />
@@ -209,22 +255,37 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
 
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <div className="flex-1 w-full">
-                {contratoUrl ? (
-                  <div className="flex items-center justify-between p-2.5 bg-white border border-green-200 rounded-md text-sm shadow-sm">
+                {empresa.contrato_url ? (
+                  <div className="flex items-center justify-between p-2.5 bg-white border border-green-200 rounded-md text-sm shadow-sm transition-all hover:border-green-300">
                     <div className="flex items-center gap-2 text-green-700 font-medium truncate">
                       <FileText className="h-4 w-4 shrink-0" />
                       <span className="truncate">Contrato Anexado</span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      asChild
-                      className="h-7 px-2 hover:bg-green-50 text-green-700 ml-2"
-                    >
-                      <a href={contratoUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Abrir
-                      </a>
-                    </Button>
+
+                    <div className="flex gap-1">
+                      {/* Botão de Download Seguro */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 hover:bg-green-50 text-green-700"
+                        onClick={handleDownload}
+                        disabled={downloading}
+                      >
+                        {downloading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Download className="h-3.5 w-3.5 mr-1.5" />
+                        )}
+                        Baixar
+                      </Button>
+
+                      {/* Botão de Abrir Externo (Opcional) */}
+                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-green-50 text-green-700" asChild>
+                        <a href={empresa.contrato_url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground italic border border-dashed border-slate-300 rounded-md p-2.5 text-center bg-white">
@@ -254,7 +315,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                   ) : (
                     <UploadCloud className="h-4 w-4 mr-2" />
                   )}
-                  {contratoUrl ? "Substituir" : "Anexar PDF"}
+                  {empresa.contrato_url ? "Substituir" : "Anexar PDF"}
                 </Button>
               </div>
             </div>
@@ -278,6 +339,18 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                 />
                 <FormField
                   control={form.control}
+                  name="nome_responsavel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Responsável</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="cnpj"
                   render={({ field }) => (
                     <FormItem>
@@ -291,25 +364,14 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                 />
                 <FormField
                   control={form.control}
-                  name="nome_responsavel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Responsável</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
                   name="email_contato"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>E-mail</FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input type="email" {...field} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -342,21 +404,16 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <option value="sem_retorno">📞 Sem Retorno</option>
-                      <option value="tratativa">💬 Em Tratativa</option>
-                      <option value="contrato_assinado">📝 Contrato Assinado</option>
-                      <option value="apolices_emitida">📋 Apólices Emitida</option>
-                      <option value="acolhimento">🤝 Acolhimento</option>
+                      <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
                       <option value="ativa">✅ Ativa</option>
-                      <option value="inativa">⏸️ Inativa</option>
-                      <option value="cancelada">🚫 Cancelada</option>
+                      <option value="inativa">🚫 Inativa / Cancelada</option>
                     </select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {/* Emails/Telefones Adicionais */}
+              {/* Contatos Adicionais */}
               <div className="space-y-4 border-t pt-4">
                 <div className="space-y-2">
                   <span className="text-xs uppercase text-muted-foreground font-bold">Emails Adicionais</span>
@@ -384,6 +441,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                     <Plus className="h-3 w-3 mr-2" /> Adicionar Email
                   </Button>
                 </div>
+
                 <div className="space-y-2">
                   <span className="text-xs uppercase text-muted-foreground font-bold">Telefones Adicionais</span>
                   {telefones.map((tel, i) => (
