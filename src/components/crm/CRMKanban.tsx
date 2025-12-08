@@ -102,10 +102,12 @@ export function CRMKanban() {
   const { data: empresas = [], isLoading } = useQuery({
     queryKey: ["empresas-crm"],
     queryFn: async () => {
+      const statusList: ("sem_retorno" | "tratativa" | "contrato_assinado" | "apolices_emitida" | "acolhimento")[] = 
+        ['sem_retorno', 'tratativa', 'contrato_assinado', 'apolices_emitida', 'acolhimento'];
       const { data, error } = await supabase
         .from("empresas")
-        .select("*")
-        .in("status", CRM_FUNNEL_STATUSES)
+        .select("id, nome, cnpj, email_contato, telefone_contato, nome_responsavel, status, emails_contato, telefones_contato, contrato_url, created_at")
+        .in("status", statusList)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
