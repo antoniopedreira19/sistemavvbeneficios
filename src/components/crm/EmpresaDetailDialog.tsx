@@ -17,7 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download } from "lucide-react";
+import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download, Trash2, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "@/hooks/use-toast";
 import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -59,6 +61,8 @@ const EmpresaDetailDialog = ({
   const [competencias, setCompetencias] = useState<LoteCompetencia[]>([]);
   const [loadingCompetencias, setLoadingCompetencias] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const queryClient = useQueryClient();
 
   const handleDownloadContrato = async () => {
     if (!empresa?.contrato_url) return;
@@ -129,6 +133,37 @@ const EmpresaDetailDialog = ({
     onEmpresaUpdated();
   };
 
+  const handleDeleteEmpresa = async () => {
+    if (!empresa) return;
+    if (!confirm(`Tem certeza que deseja excluir a empresa "${empresa.nome}"? Esta ação não pode ser desfeita.`)) return;
+
+    setDeleting(true);
+    try {
+      // Remove contrato do Storage se existir
+      if (empresa.contrato_url?.includes("supabase.co/storage")) {
+        const path = empresa.contrato_url.split("/contratos/").pop();
+        if (path) {
+          await supabase.storage.from("contratos").remove([decodeURIComponent(path)]);
+        }
+      }
+
+      const { error } = await supabase.from("empresas").delete().eq("id", empresa.id);
+      if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
+      queryClient.invalidateQueries({ queryKey: ["empresas-inativas"] });
+      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
+
+      toast({ title: "Empresa excluída", description: "A empresa foi removida com sucesso." });
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const empresaForEdit = {
     id: empresa.id,
     nome: empresa.nome,
@@ -155,15 +190,25 @@ const EmpresaDetailDialog = ({
                 <Building2 className="h-5 w-5" />
                 Detalhes da Empresa
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditDialogOpen(true)}
-                className="ml-2"
-              >
-                <Pencil className="h-4 w-4 mr-1" />
-                Editar
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditDialogOpen(true)}
+                >
+                  <Pencil className="h-4 w-4 mr-1" />
+                  Editar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteEmpresa}
+                  disabled={deleting}
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </Button>
+              </div>
             </DialogTitle>
             <DialogDescription>
               Visualize e gerencie informações da empresa
