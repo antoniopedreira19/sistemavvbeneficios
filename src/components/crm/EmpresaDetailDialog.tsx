@@ -221,15 +221,15 @@ const EmpresaDetailDialog = ({
                   Contrato
                 </Label>
                 {empresa.contrato_url ? (
-                  <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md">
-                    <FileText className="h-4 w-4 text-green-600 shrink-0" />
-                    <span className="text-sm text-green-700 font-medium flex-1">Contrato Anexado</span>
+                  <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800">
+                    <FileText className="h-4 w-4 text-green-600 shrink-0 dark:text-green-400" />
+                    <span className="text-sm text-green-700 font-medium flex-1 dark:text-green-300">Contrato Anexado</span>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         asChild
-                        className="h-7 px-2 hover:bg-green-100 text-green-700"
+                        className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
                       >
                         <a href={empresa.contrato_url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
@@ -239,9 +239,9 @@ const EmpresaDetailDialog = ({
                         variant="ghost"
                         size="sm"
                         asChild
-                        className="h-7 px-2 hover:bg-green-100 text-green-700"
+                        className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
                       >
-                        <a href={empresa.contrato_url.replace('/view', '/export?format=pdf')} download>
+                        <a href={`${empresa.contrato_url}?download=`} download>
                           <Download className="h-3.5 w-3.5 mr-1" /> Baixar
                         </a>
                       </Button>
