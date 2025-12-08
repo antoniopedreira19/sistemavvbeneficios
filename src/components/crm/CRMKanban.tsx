@@ -1,382 +1,324 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  DndContext,
-  DragOverlay,
-  useSensor,
-  useSensors,
-  PointerSensor,
-  closestCenter,
-  DragStartEvent,
-  DragEndEvent,
-  defaultDropAnimationSideEffects,
-  DropAnimation,
-} from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { toast } from "sonner";
-import {
-  Loader2,
-  Calendar,
-  User,
-  Mail,
-  PhoneMissed,
-  MessageSquare,
-  FileSignature,
-  ShieldCheck,
-  Handshake,
-  PartyPopper,
-  ChevronLeft,
-  ChevronRight,
-  Building2,
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
+import { User, Mail, Phone, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
+import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
+import EmpresaDetailDialog from "./EmpresaDetailDialog";
 
-// Configuração das Colunas
-const COLUMNS = {
-  sem_retorno: {
-    title: "Sem Retorno",
-    color: "border-slate-200 bg-slate-50/50",
-    headerColor: "text-slate-600 bg-slate-100",
-    icon: PhoneMissed,
-  },
-  tratativa: {
-    title: "Em Tratativa",
-    color: "border-blue-200 bg-blue-50/50",
-    headerColor: "text-blue-600 bg-blue-100",
-    icon: MessageSquare,
-  },
-  contrato_assinado: {
-    title: "Contrato Assinado",
-    color: "border-purple-200 bg-purple-50/50",
-    headerColor: "text-purple-600 bg-purple-100",
-    icon: FileSignature,
-  },
-  apolices_emitida: {
-    title: "Apólices Emitidas",
-    color: "border-indigo-200 bg-indigo-50/50",
-    headerColor: "text-indigo-600 bg-indigo-100",
-    icon: ShieldCheck,
-  },
-  acolhimento: {
-    title: "Acolhimento",
-    color: "border-orange-200 bg-orange-50/50",
-    headerColor: "text-orange-600 bg-orange-100",
-    icon: Handshake,
-  },
-  empresa_ativa: {
-    title: "Ativar Cliente",
-    color: "border-green-300 bg-green-50/80 dashed border-2",
-    headerColor: "text-green-700 bg-green-100",
-    icon: PartyPopper,
-  },
+const CRM_COLUMNS = [
+  { id: "sem_retorno", title: "Sem Retorno", color: "bg-slate-500" },
+  { id: "tratativa", title: "Em Tratativa", color: "bg-amber-500" },
+  { id: "contrato_assinado", title: "Contrato Assinado", color: "bg-blue-500" },
+  { id: "apolices_emitida", title: "Apólices Emitida", color: "bg-purple-500" },
+  { id: "acolhimento", title: "Acolhimento", color: "bg-teal-500" },
+  { id: "empresa_ativa", title: "Empresa Ativa", color: "bg-green-500" },
+];
+
+const formatCNPJ = (val: string) =>
+  val?.replace(/\D/g, "").replace(/^(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, "$1.$2.$3/$4-$5") || "";
+
+const formatPhone = (val: string) => {
+  if (!val) return null;
+  const digits = val.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return val;
 };
 
-type CRMStatus = keyof typeof COLUMNS;
+const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "??";
 
-// --- COMPONENTE CARD (Draggable) ---
-function KanbanCard({ empresa, isOverlay = false, onClick, onAtivar }: any) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
-    id: empresa.id,
-    data: { empresa },
-  });
+interface KanbanCardProps {
+  empresa: EmpresaCRM;
+  onClick: () => void;
+}
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.3 : 1,
-  };
-
-  // Se for overlay, usamos um ref normal (não do sortable)
-  const ref = isOverlay ? null : setNodeRef;
-  const props = isOverlay ? {} : { ...attributes, ...listeners, style };
-
-  const formatCNPJ = (val: string) =>
-    val.replace(/\D/g, "").replace(/^(\d{2})(\d{3})?(\d{3})?(\d{4})?(\d{2})?/, "$1.$2.$3/$4-$5");
-  const getInitials = (n: string) => n.substring(0, 2).toUpperCase();
-
+function KanbanCard({ empresa, onClick }: KanbanCardProps) {
   return (
-    <div ref={ref} {...props} className="touch-none">
-      <Card
-        onClick={onClick}
-        className={`
-          bg-white border-none shadow-sm cursor-grab group relative transition-all duration-200
-          ${isOverlay ? "shadow-2xl rotate-2 scale-105 z-50 ring-2 ring-primary cursor-grabbing" : "hover:shadow-md hover:-translate-y-0.5"}
-        `}
-      >
-        <CardContent className="p-4 space-y-4">
-          {/* Header */}
-          <div className="flex justify-between items-start gap-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-9 w-9 border border-slate-100">
-                <AvatarFallback className="bg-slate-100 text-slate-600 text-xs font-bold">
-                  {getInitials(empresa.nome)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="space-y-0.5">
-                <span className="font-semibold text-sm line-clamp-1 text-slate-900">{empresa.nome}</span>
-                {empresa.nome_responsavel && (
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <User className="h-3 w-3" /> {empresa.nome_responsavel}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Botão Ativar */}
-            {onAtivar && !isOverlay && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-50 -mt-1 -mr-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAtivar();
-                }}
-                onPointerDown={(e) => e.stopPropagation()} // Importante para não draggar
-              >
-                <PartyPopper className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+    <Card onClick={onClick} className="p-3 bg-card border shadow-sm cursor-pointer select-none">
+      <div className="flex items-center gap-2 mb-2">
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+            {getInitials(empresa.nome)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-sm text-foreground truncate leading-tight">{empresa.nome}</p>
+          <p className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(empresa.cnpj)}</p>
+        </div>
+      </div>
 
-          {/* Info */}
-          <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-lg border border-slate-100">
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <span className="truncate font-mono">{formatCNPJ(empresa.cnpj)}</span>
-            </div>
-            {empresa.email_contato && (
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <span className="truncate">{empresa.email_contato}</span>
-              </div>
-            )}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 truncate">
+          <User className="h-3 w-3 shrink-0" />
+          <span className="truncate">{empresa.nome_responsavel || "Sem responsável"}</span>
+        </div>
+        <div className="flex items-center gap-1.5 truncate">
+          <Mail className="h-3 w-3 shrink-0" />
+          <span className="truncate">{empresa.email_contato?.toLowerCase() || "Sem email"}</span>
+        </div>
+        {empresa.telefone_contato && (
+          <div className="flex items-center gap-1.5 truncate">
+            <Phone className="h-3 w-3 shrink-0" />
+            <span className="truncate">{formatPhone(empresa.telefone_contato)}</span>
           </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium bg-white px-2 py-1 rounded-full border border-slate-100">
-              <Calendar className="h-3 w-3" />
-              {formatDistanceToNow(new Date(empresa.created_at), { locale: ptBR, addSuffix: true })}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
-// --- COMPONENTE PRINCIPAL ---
 export function CRMKanban() {
   const queryClient = useQueryClient();
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [empresaParaEditar, setEmpresaParaEditar] = useState<any | null>(null);
+  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: -300, behavior: "smooth" });
+    }
+  };
+
+  const scrollRight = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: 300, behavior: "smooth" });
+    }
+  };
 
   const { data: empresas = [], isLoading } = useQuery({
-    queryKey: ["crm-empresas"],
+    queryKey: ["empresas-crm"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("empresas")
         .select("*")
         .eq("status", "em_implementacao")
         .order("created_at", { ascending: false });
+
       if (error) throw error;
-      return data;
+      return data as EmpresaCRM[];
     },
   });
 
-  const moveCardMutation = useMutation({
-    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
-      const { error } = await supabase.from("empresas").update({ status_crm: newStatus }).eq("id", id);
-      if (error) throw error;
-    },
-    onMutate: async ({ id, newStatus }) => {
-      await queryClient.cancelQueries({ queryKey: ["crm-empresas"] });
-      const previous = queryClient.getQueryData(["crm-empresas"]);
-      queryClient.setQueryData(["crm-empresas"], (old: any[]) =>
-        old.map((e) => (e.id === id ? { ...e, status_crm: newStatus } : e)),
-      );
-      return { previous };
-    },
-    onError: (err, vars, context: any) => queryClient.setQueryData(["crm-empresas"], context.previous),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["crm-empresas"] }),
-  });
+  // Filter empresas by search term
+  const filteredEmpresas = useMemo(() => {
+    if (!searchTerm.trim()) return empresas;
+    const term = searchTerm.toLowerCase().replace(/\D/g, "");
+    const termText = searchTerm.toLowerCase();
+    return empresas.filter(
+      (e) =>
+        e.nome.toLowerCase().includes(termText) ||
+        e.cnpj.replace(/\D/g, "").includes(term) ||
+        e.cnpj.includes(searchTerm),
+    );
+  }, [empresas, searchTerm]);
 
-  const ativarEmpresaMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("empresas")
-        .update({ status: "ativa", status_crm: "empresa_ativa" })
-        .eq("id", id);
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status_crm }: { id: string; status_crm: string }) => {
+      const { error } = await supabase.from("empresas").update({ status_crm }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crm-empresas"] });
-      queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] });
-      toast.success("Empresa ativada!");
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
+      toast.error("Erro ao atualizar status");
     },
   });
 
-  const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as string);
+  const handleDragEnd = (result: DropResult) => {
+    const { destination, source, draggableId } = result;
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    if (!over) return;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
 
-    if (over.id === "empresa_ativa") {
-      ativarEmpresaMutation.mutate(active.id as string);
-    } else if (Object.keys(COLUMNS).includes(over.id as string)) {
-      if (active.data.current?.empresa.status_crm !== over.id) {
-        moveCardMutation.mutate({ id: active.id as string, newStatus: over.id as string });
+    const newStatus = destination.droppableId;
 
-        // Abre modal se for contrato assinado
-        if (over.id === "contrato_assinado") {
-          const emp = empresas.find((e: any) => e.id === active.id);
-          if (emp) {
-            setEmpresaParaEditar(emp);
-            toast.info("Anexe o contrato assinado.");
-          }
-        }
+    // Optimistic update with correct positioning
+    queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
+      if (!old) return old;
+
+      const updated = [...old];
+      const movedEmpresa = updated.find((e) => e.id === draggableId);
+      if (!movedEmpresa) return old;
+
+      // Update the status
+      movedEmpresa.status_crm = newStatus;
+
+      // Get items in destination column (excluding the moved item)
+      const destItems = updated.filter((e) => e.status_crm === newStatus && e.id !== draggableId);
+
+      // Calculate new order by adjusting created_at to position correctly
+      // We'll use a simple approach: reorder the array based on destination index
+      const sourceItems = updated.filter((e) => e.status_crm === source.droppableId && e.id !== draggableId);
+
+      // Build new array maintaining order
+      const result: EmpresaCRM[] = [];
+
+      for (const column of CRM_COLUMNS) {
+        const columnItems =
+          column.id === newStatus
+            ? [...destItems.slice(0, destination.index), movedEmpresa, ...destItems.slice(destination.index)]
+            : updated.filter((e) => e.status_crm === column.id && e.id !== draggableId);
+
+        result.push(...columnItems);
       }
-    }
+
+      return result;
+    });
+
+    // Fire mutation
+    updateStatusMutation.mutate({
+      id: draggableId,
+      status_crm: newStatus,
+    });
   };
 
-  const scroll = (direction: "left" | "right") => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollBy({ left: direction === "left" ? -350 : 350, behavior: "smooth" });
-    }
+  const getColumnEmpresas = (statusId: string) => {
+    return filteredEmpresas.filter((e) => e.status_crm === statusId);
   };
 
-  const activeEmpresa = activeId ? empresas.find((e: any) => e.id === activeId) : null;
-  const dropAnimation: DropAnimation = {
-    sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0.5" } } }),
-  };
-
-  if (isLoading)
+  if (isLoading) {
     return (
-      <div className="flex justify-center p-20">
-        <Loader2 className="animate-spin text-primary" />
+      <div className="space-y-4">
+        <div className="w-72 h-10 bg-muted rounded animate-pulse" />
+        <div className="flex gap-3 overflow-x-auto pb-4">
+          {CRM_COLUMNS.map((col) => (
+            <div key={col.id} className="min-w-[280px] bg-muted/30 rounded-lg p-3 animate-pulse">
+              <div className="h-5 bg-muted rounded w-24 mb-3" />
+              <div className="space-y-2">
+                <div className="h-24 bg-muted rounded" />
+                <div className="h-24 bg-muted rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
+  }
 
   return (
-    <div className="relative h-[calc(100vh-220px)] w-full group">
-      <Button
-        variant="secondary"
-        size="icon"
-        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 shadow-lg bg-white/90 hover:bg-white border opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => scroll("left")}
-      >
-        <ChevronLeft className="h-6 w-6 text-slate-700" />
-      </Button>
-      <Button
-        variant="secondary"
-        size="icon"
-        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 shadow-lg bg-white/90 hover:bg-white border opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => scroll("right")}
-      >
-        <ChevronRight className="h-6 w-6 text-slate-700" />
-      </Button>
+    <>
+      {/* Search Bar and Navigation */}
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="relative w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou CNPJ..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
 
-      <div ref={scrollContainerRef} className="h-full overflow-x-auto pb-4 px-1" style={{ scrollbarWidth: "none" }}>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="flex gap-4 min-w-max h-full">
-            {(Object.keys(COLUMNS) as Array<keyof typeof COLUMNS>).map((colId) => {
-              const col = COLUMNS[colId];
-              const Icon = col.icon;
-              const isFinal = colId === "empresa_ativa";
-              const colItems = empresas.filter((e: any) => (e.status_crm || "sem_retorno") === colId);
-
-              return (
-                <div key={colId} className="w-[340px] shrink-0 flex flex-col h-full">
-                  <div
-                    className={`p-4 rounded-t-xl border-b flex justify-between items-center bg-white shadow-sm mb-3 ${col.color.replace("bg-", "border-")}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`p-1.5 rounded-md ${col.headerColor}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <h3 className="font-bold text-sm uppercase text-slate-700">{col.title}</h3>
-                    </div>
-                    {!isFinal && (
-                      <Badge variant="secondary" className="bg-slate-100 text-slate-600">
-                        {colItems.length}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <Droppable droppableId={colId}>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`flex-1 p-2 rounded-xl border transition-colors duration-200 overflow-y-auto space-y-4 ${col.color} ${snapshot.isDraggingOver ? "bg-white/50 ring-2 ring-primary/50" : ""} ${isFinal ? "flex items-center justify-center cursor-pointer opacity-90 hover:opacity-100" : ""}`}
-                      >
-                        {isFinal ? (
-                          <div className="text-center text-green-700 p-6 border-2 border-dashed border-green-400 rounded-xl bg-green-50 w-full flex flex-col items-center gap-3">
-                            <div className="bg-green-100 p-3 rounded-full">
-                              <PartyPopper className="h-8 w-8 animate-pulse text-green-600" />
-                            </div>
-                            <span className="text-sm font-medium">Solte aqui para Ativar</span>
-                          </div>
-                        ) : (
-                          <SortableContext
-                            items={colItems.map((e: any) => e.id)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            {colItems.map((empresa: any) => (
-                              <KanbanCard
-                                key={empresa.id}
-                                empresa={empresa}
-                                onClick={() => setEmpresaParaEditar(empresa)}
-                                onAtivar={
-                                  colId === "acolhimento" ? () => ativarEmpresaMutation.mutate(empresa.id) : undefined
-                                }
-                              />
-                            ))}
-                          </SortableContext>
-                        )}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </div>
-              );
-            })}
-          </div>
-          <DragOverlay dropAnimation={dropAnimation}>
-            {activeEmpresa ? (
-              <div className="rotate-2 cursor-grabbing">
-                <KanbanCard empresa={activeEmpresa} isOverlay />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+        {/* Scroll Navigation Buttons */}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={scrollLeft} className="h-8 w-8">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={scrollRight} className="h-8 w-8">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      {empresaParaEditar && (
-        <EditarEmpresaDialog
-          open={!!empresaParaEditar}
-          onOpenChange={(open) => !open && setEmpresaParaEditar(null)}
-          empresa={empresaParaEditar}
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ["crm-empresas"] })}
-        />
-      )}
-    </div>
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div
+          ref={scrollContainerRef}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              scrollLeft();
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              scrollRight();
+            }
+          }}
+          className="flex gap-3 overflow-x-auto pb-4 scroll-smooth focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-lg"
+          style={{ scrollbarWidth: "thin" }}
+        >
+          {CRM_COLUMNS.map((column) => {
+            const columnEmpresas = getColumnEmpresas(column.id);
+            return (
+              <div key={column.id} className="min-w-[280px] w-[280px] flex-shrink-0">
+                {/* Column Header */}
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <div className={`w-2.5 h-2.5 rounded-full ${column.color}`} />
+                  <h3 className="font-medium text-sm text-foreground">{column.title}</h3>
+                  <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5">
+                    {columnEmpresas.length}
+                  </Badge>
+                </div>
+
+                {/* Droppable Area */}
+                <Droppable droppableId={column.id}>
+                  {(provided, snapshot) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className={`
+                        min-h-[400px] p-2 rounded-lg border transition-colors
+                        ${snapshot.isDraggingOver ? "bg-primary/5 border-primary/30" : "bg-muted/20 border-border/50"}
+                      `}
+                    >
+                      <div className="space-y-2">
+                        {columnEmpresas.map((empresa, index) => (
+                          <Draggable key={empresa.id} draggableId={empresa.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={provided.draggableProps.style}
+                                className={snapshot.isDragging ? "opacity-90" : ""}
+                              >
+                                <KanbanCard
+                                  empresa={empresa}
+                                  onClick={() => !snapshot.isDragging && setSelectedEmpresa(empresa)}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                      </div>
+                      {provided.placeholder}
+                      {columnEmpresas.length === 0 && !snapshot.isDraggingOver && (
+                        <p className="text-center text-muted-foreground text-xs py-8">Nenhuma empresa</p>
+                      )}
+                    </div>
+                  )}
+                </Droppable>
+              </div>
+            );
+          })}
+        </div>
+      </DragDropContext>
+
+      <EmpresaDetailDialog
+        empresa={selectedEmpresa}
+        open={!!selectedEmpresa}
+        onOpenChange={(open) => !open && setSelectedEmpresa(null)}
+        statusLabels={CRM_STATUS_LABELS}
+        onUpdateStatus={(empresaId, newStatus) => {
+          queryClient.setQueryData<EmpresaCRM[]>(["empresas-crm"], (old) => {
+            if (!old) return old;
+            return old.map((e) => (e.id === empresaId ? { ...e, status_crm: newStatus } : e));
+          });
+          updateStatusMutation.mutate({ id: empresaId, status_crm: newStatus });
+        }}
+        onEmpresaUpdated={() => {
+          queryClient.invalidateQueries({ queryKey: ["empresas-crm"] });
+        }}
+      />
+    </>
   );
 }
