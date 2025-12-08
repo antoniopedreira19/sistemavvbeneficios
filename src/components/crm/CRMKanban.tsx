@@ -106,11 +106,14 @@ export function CRMKanban() {
       const { data, error } = await supabase
         .from("empresas")
         .select("*")
-        .eq("status", "em_implementacao")
+        .eq("status", "em_implementacao" as any)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data as EmpresaCRM[];
+      return (data || []).map(e => ({
+        ...e,
+        status_crm: (e as any).status_crm || 'tratativa'
+      })) as EmpresaCRM[];
     },
   });
 
@@ -129,7 +132,7 @@ export function CRMKanban() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status_crm }: { id: string; status_crm: string }) => {
-      const { error } = await supabase.from("empresas").update({ status_crm }).eq("id", id);
+      const { error } = await supabase.from("empresas").update({ status_crm } as any).eq("id", id);
       if (error) throw error;
     },
     onError: () => {

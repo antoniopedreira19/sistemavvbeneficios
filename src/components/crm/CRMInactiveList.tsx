@@ -46,10 +46,13 @@ export function CRMInactiveList() {
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa").order("nome");
+      const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa" as any).order("nome");
 
       if (error) throw error;
-      return data;
+      return (data || []).map(e => ({
+        ...e,
+        status_crm: (e as any).status_crm || 'perdido'
+      })) as EmpresaCRM[];
     },
   });
 
@@ -61,7 +64,7 @@ export function CRMInactiveList() {
   const handleUpdateStatus = async (empresaId: string, newStatus: string) => {
     const { error } = await supabase
       .from("empresas")
-      .update({ status_crm: newStatus })
+      .update({ status_crm: newStatus } as any)
       .eq("id", empresaId);
 
     if (error) {
