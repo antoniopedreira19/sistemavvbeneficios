@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Building2, Mail, Phone, FileText, User, Pencil, Calendar } from "lucide-react";
+import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download } from "lucide-react";
 import { EmpresaCRM, LOTE_STATUS_LABELS } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -103,6 +103,7 @@ const EmpresaDetailDialog = ({
     status: "em_implementacao" as const,
     emails_contato: empresa.emails_contato || [],
     telefones_contato: empresa.telefones_contato || [],
+    contrato_url: empresa.contrato_url,
   };
 
   return (
@@ -202,6 +203,44 @@ const EmpresaDetailDialog = ({
                     <span className="text-muted-foreground italic text-sm">Não informado</span>
                   );
                 })()}
+              </div>
+
+              {/* Contrato Digital */}
+              <div className="space-y-2">
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide flex items-center gap-1">
+                  <FileText className="h-3 w-3" />
+                  Contrato
+                </Label>
+                {empresa.contrato_url ? (
+                  <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md">
+                    <FileText className="h-4 w-4 text-green-600 shrink-0" />
+                    <span className="text-sm text-green-700 font-medium flex-1">Contrato Anexado</span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        asChild
+                        className="h-7 px-2 hover:bg-green-100 text-green-700"
+                      >
+                        <a href={empresa.contrato_url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
+                        </a>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        asChild
+                        className="h-7 px-2 hover:bg-green-100 text-green-700"
+                      >
+                        <a href={empresa.contrato_url.replace('/view', '/export?format=pdf')} download>
+                          <Download className="h-3.5 w-3.5 mr-1" /> Baixar
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">Nenhum contrato anexado</p>
+                )}
               </div>
             </div>
 
