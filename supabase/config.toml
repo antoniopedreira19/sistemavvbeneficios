@@ -1,1 +1,13 @@
 project_id = "gkmobhbmgxwrpuucoykn"
+
+[functions.create-user]
+verify_jwt = true
+
+[functions.delete-user]
+verify_jwt = true
+
+[functions.enviar-notificacao-webhook]
+verify_jwt = false
+
+[functions.upload-contract]
+verify_jwt = true
