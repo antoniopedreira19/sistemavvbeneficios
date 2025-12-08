@@ -21,7 +21,7 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["ativa", "em_implementacao", "inativa", "cancelada"]),
+  status: z.enum(["ativa", "em_implementacao"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
@@ -112,7 +112,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
 
       let statusCrmUpdate = {};
       if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
-      if (data.status === "inativa" || data.status === "cancelada") statusCrmUpdate = { status_crm: "cancelada" };
 
       const { error } = await supabase
         .from("empresas")
@@ -310,7 +309,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                     >
                       <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
                       <option value="ativa">✅ Ativa</option>
-                      <option value="inativa">🚫 Inativa / Cancelada</option>
                     </select>
                     <FormMessage />
                   </FormItem>
