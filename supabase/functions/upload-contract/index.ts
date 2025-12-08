@@ -79,15 +79,22 @@ async function getGoogleAccessToken(credentials: { client_email: string; private
   return data.access_token
 }
 
-// Função para buscar pasta por nome
+// Função para buscar pasta por nome (suporta Shared Drives)
 async function findFolder(accessToken: string, name: string, parentId?: string): Promise<string | null> {
   let query = `mimeType='application/vnd.google-apps.folder' and name='${name}' and trashed=false`
   if (parentId) {
     query += ` and '${parentId}' in parents`
   }
 
+  const params = new URLSearchParams({
+    q: query,
+    fields: 'files(id,name)',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  })
+
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`,
+    `https://www.googleapis.com/drive/v3/files?${params}`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
     }
@@ -102,7 +109,7 @@ async function findFolder(accessToken: string, name: string, parentId?: string):
   return data.files && data.files.length > 0 ? data.files[0].id : null
 }
 
-// Função para criar pasta
+// Função para criar pasta (suporta Shared Drives)
 async function createFolder(accessToken: string, name: string, parentId?: string): Promise<string> {
   const metadata: Record<string, unknown> = {
     name,
@@ -112,7 +119,7 @@ async function createFolder(accessToken: string, name: string, parentId?: string
     metadata.parents = [parentId]
   }
 
-  const response = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const response = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -130,7 +137,7 @@ async function createFolder(accessToken: string, name: string, parentId?: string
   return data.id
 }
 
-// Função para upload de arquivo
+// Função para upload de arquivo (suporta Shared Drives)
 async function uploadFile(
   accessToken: string,
   fileName: string,
@@ -158,7 +165,7 @@ async function uploadFile(
   const multipartBody = metadataPart + contentPart + base64Content + closeDelimiter
 
   const response = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true',
     {
       method: 'POST',
       headers: {
@@ -177,9 +184,9 @@ async function uploadFile(
   return await response.json()
 }
 
-// Função para definir permissões
+// Função para definir permissões (suporta Shared Drives)
 async function setPublicPermission(accessToken: string, fileId: string): Promise<void> {
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?supportsAllDrives=true`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -190,7 +197,8 @@ async function setPublicPermission(accessToken: string, fileId: string): Promise
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(`Erro ao definir permissões: ${errorText}`)
+    console.warn(`Aviso ao definir permissões: ${errorText}`)
+    // Não lançar erro pois em Shared Drives as permissões podem ser herdadas
   }
 }
 
