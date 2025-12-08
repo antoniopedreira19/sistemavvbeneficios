@@ -23,7 +23,7 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["ativa", "em_implementacao", "inativa", "cancelada"]),
+  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
