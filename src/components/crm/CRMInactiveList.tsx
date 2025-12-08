@@ -38,11 +38,11 @@ export function CRMInactiveList() {
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
-      // Mostra todas empresas que NÃO são ativas e NÃO estão no funil CRM
+      // Mostra todas empresas que NÃO são ativas
       const { data, error } = await supabase
         .from("empresas")
         .select("*")
-        .not("status", "in", '("ativa","sem_retorno","tratativa","contrato_assinado","apolices_emitida","acolhimento")')
+        .neq("status", "ativa")
         .order("nome");
 
       if (error) throw error;
