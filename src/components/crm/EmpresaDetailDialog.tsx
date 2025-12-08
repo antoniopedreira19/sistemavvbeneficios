@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download } from "lucide-react";
-import { EmpresaCRM, LOTE_STATUS_LABELS } from "@/types/crm";
+import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -36,12 +36,14 @@ interface LoteCompetencia {
 }
 
 const STATUS_BADGE_VARIANTS: Record<string, string> = {
-  sem_retorno: "bg-red-500/10 text-red-600 border-red-500/30",
+  sem_retorno: "bg-slate-500/10 text-slate-600 border-slate-500/30",
   tratativa: "bg-amber-500/10 text-amber-600 border-amber-500/30",
   contrato_assinado: "bg-blue-500/10 text-blue-600 border-blue-500/30",
   apolices_emitida: "bg-purple-500/10 text-purple-600 border-purple-500/30",
   acolhimento: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
-  empresa_ativa: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
+  ativa: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
+  inativa: "bg-red-500/10 text-red-600 border-red-500/30",
+  cancelada: "bg-orange-500/10 text-orange-600 border-orange-500/30",
 };
 
 const EmpresaDetailDialog = ({
@@ -100,11 +102,14 @@ const EmpresaDetailDialog = ({
     email_contato: empresa.email_contato,
     telefone_contato: empresa.telefone_contato,
     nome_responsavel: empresa.nome_responsavel,
-    status: "em_implementacao" as const,
+    status: empresa.status,
     emails_contato: empresa.emails_contato || [],
     telefones_contato: empresa.telefones_contato || [],
     contrato_url: empresa.contrato_url,
   };
+
+  // Determinar se está no funil CRM ou é status final
+  const isInFunnel = CRM_FUNNEL_STATUSES.includes(empresa.status as any);
 
   return (
     <>
@@ -247,16 +252,16 @@ const EmpresaDetailDialog = ({
             <div className="border-t pt-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide">
-                  Status no CRM
+                  Status
                 </Label>
-                <Select value={empresa.status_crm} onValueChange={handleStatusChange}>
+                <Select value={empresa.status} onValueChange={handleStatusChange}>
                   <SelectTrigger>
                     <SelectValue>
                       <Badge
                         variant="outline"
-                        className={STATUS_BADGE_VARIANTS[empresa.status_crm] || "bg-muted text-muted-foreground"}
+                        className={STATUS_BADGE_VARIANTS[empresa.status] || "bg-muted text-muted-foreground"}
                       >
-                        {statusLabels[empresa.status_crm] || empresa.status_crm}
+                        {statusLabels[empresa.status] || empresa.status}
                       </Badge>
                     </SelectValue>
                   </SelectTrigger>

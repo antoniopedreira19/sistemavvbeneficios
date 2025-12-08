@@ -16,7 +16,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { EmpresaStatus } from "@/types/crm";
 
 const empresaSchema = z.object({
   nome: z.string().trim().min(1, "Nome é obrigatório").max(200, "Nome muito longo"),
@@ -28,7 +28,7 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["ativa", "em_implementacao"]),
+  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
@@ -51,7 +51,7 @@ export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresa
       cnpj: "",
       email_contato: "",
       telefone_contato: "",
-      status: "em_implementacao",
+      status: "sem_retorno",
     },
   });
 
@@ -66,7 +66,7 @@ export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresa
           email_contato: data.email_contato,
           telefone_contato: data.telefone_contato,
           status: data.status,
-        } as any,
+        },
       ]);
 
       if (error) throw error;
@@ -191,8 +191,18 @@ export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresa
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <option value="em_implementacao">Em Implementação</option>
-                      <option value="ativa">Ativa</option>
+                      <optgroup label="Funil CRM">
+                        <option value="sem_retorno">🔘 Sem Retorno</option>
+                        <option value="tratativa">💬 Em Tratativa</option>
+                        <option value="contrato_assinado">📝 Contrato Assinado</option>
+                        <option value="apolices_emitida">📄 Apólices Emitida</option>
+                        <option value="acolhimento">🤝 Acolhimento</option>
+                      </optgroup>
+                      <optgroup label="Status Final">
+                        <option value="ativa">✅ Ativa</option>
+                        <option value="inativa">⏸️ Inativa</option>
+                        <option value="cancelada">❌ Cancelada</option>
+                      </optgroup>
                     </select>
                     <FormMessage />
                   </FormItem>

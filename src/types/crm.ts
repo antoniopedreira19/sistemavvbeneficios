@@ -1,3 +1,13 @@
+export type EmpresaStatus = 
+  | 'sem_retorno' 
+  | 'tratativa' 
+  | 'contrato_assinado' 
+  | 'apolices_emitida' 
+  | 'acolhimento' 
+  | 'ativa' 
+  | 'inativa' 
+  | 'cancelada';
+
 export interface EmpresaCRM {
   id: string;
   nome: string;
@@ -5,8 +15,7 @@ export interface EmpresaCRM {
   email_contato: string | null;
   telefone_contato: string | null;
   nome_responsavel: string | null;
-  status_crm: string;
-  status?: string;
+  status: EmpresaStatus;
   created_at: string;
   emails_contato?: string[];
   telefones_contato?: string[];
@@ -19,8 +28,18 @@ export const CRM_STATUS_LABELS: Record<string, string> = {
   contrato_assinado: "Contrato Assinado",
   apolices_emitida: "Apólices Emitida",
   acolhimento: "Acolhimento",
-  empresa_ativa: "Empresa Ativa",
+  ativa: "Empresa Ativa",
+  inativa: "Inativa",
+  cancelada: "Cancelada",
 };
+
+export const CRM_FUNNEL_STATUSES: EmpresaStatus[] = [
+  'sem_retorno',
+  'tratativa',
+  'contrato_assinado',
+  'apolices_emitida',
+  'acolhimento',
+];
 
 export const LOTE_STATUS_LABELS: Record<string, string> = {
   rascunho: "Rascunho",

@@ -23,18 +23,10 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import EmpresaDetailDialog from "@/components/crm/EmpresaDetailDialog";
-import { EmpresaCRM } from "@/types/crm";
+import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
 import { toast } from "sonner";
 
 const ITEMS_PER_PAGE = 50;
-
-const STATUS_LABELS: Record<string, string> = {
-  tratativa: "Tratativa",
-  negociacao: "Negociação",
-  fechamento: "Fechamento",
-  empresa_ativa: "Empresa Ativa",
-  perdido: "Perdido",
-};
 
 export function CRMInactiveList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -46,13 +38,14 @@ export function CRMInactiveList() {
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa" as any).order("nome");
+      const { data, error } = await supabase
+        .from("empresas")
+        .select("*")
+        .in("status", ["inativa", "cancelada"])
+        .order("nome");
 
       if (error) throw error;
-      return (data || []).map(e => ({
-        ...e,
-        status_crm: (e as any).status_crm || 'perdido'
-      })) as EmpresaCRM[];
+      return (data || []) as EmpresaCRM[];
     },
   });
 
@@ -64,7 +57,7 @@ export function CRMInactiveList() {
   const handleUpdateStatus = async (empresaId: string, newStatus: string) => {
     const { error } = await supabase
       .from("empresas")
-      .update({ status_crm: newStatus } as any)
+      .update({ status: newStatus as any })
       .eq("id", empresaId);
 
     if (error) {
@@ -108,7 +101,7 @@ export function CRMInactiveList() {
         <CardTitle className="flex justify-between items-center text-slate-700">
           <div className="flex items-center gap-2">
             <ArchiveX className="h-5 w-5 text-slate-500" />
-            Empresas Inativas / Outros ({empresas?.length || 0})
+            Empresas Inativas / Canceladas ({empresas?.length || 0})
           </div>
           <div className="relative w-72">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
@@ -118,7 +111,7 @@ export function CRMInactiveList() {
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
-                setCurrentPage(1); // Reseta para página 1 ao filtrar
+                setCurrentPage(1);
               }}
             />
           </div>
@@ -129,7 +122,6 @@ export function CRMInactiveList() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
-                {/* Definição de larguras para evitar quebra de layout */}
                 <TableHead className="w-[30%]">Empresa</TableHead>
                 <TableHead className="w-[20%]">Responsável</TableHead>
                 <TableHead className="w-[25%]">Contato</TableHead>
@@ -141,7 +133,7 @@ export function CRMInactiveList() {
               {paginatedEmpresas.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    Nenhuma empresa encontrada com status diferente de ativo.
+                    Nenhuma empresa inativa ou cancelada encontrada.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -149,7 +141,7 @@ export function CRMInactiveList() {
                   <TableRow 
                     key={empresa.id} 
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => handleViewDetails(empresa as EmpresaCRM)}
+                    onClick={() => handleViewDetails(empresa)}
                   >
                     <TableCell>
                       <div className="flex flex-col">
@@ -201,7 +193,7 @@ export function CRMInactiveList() {
                             className="text-primary font-medium"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleViewDetails(empresa as EmpresaCRM);
+                              handleViewDetails(empresa);
                             }}
                           >
                             Ver Detalhes
@@ -247,7 +239,7 @@ export function CRMInactiveList() {
           empresa={selectedEmpresa}
           open={detailDialogOpen}
           onOpenChange={setDetailDialogOpen}
-          statusLabels={STATUS_LABELS}
+          statusLabels={CRM_STATUS_LABELS}
           onUpdateStatus={handleUpdateStatus}
           onEmpresaUpdated={handleEmpresaUpdated}
         />
@@ -258,17 +250,17 @@ export function CRMInactiveList() {
 
 // Helper para colorir os badges conforme o status
 function StatusBadge({ status }: { status: string }) {
-  if (status === "em_implementacao") {
-    return (
-      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap">
-        Em Implementação
-      </Badge>
-    );
-  }
-  if (status === "cancelada" || status === "inativa") {
+  if (status === "inativa") {
     return (
       <Badge variant="destructive" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 whitespace-nowrap">
         Inativa
+      </Badge>
+    );
+  }
+  if (status === "cancelada") {
+    return (
+      <Badge variant="destructive" className="bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 whitespace-nowrap">
+        Cancelada
       </Badge>
     );
   }

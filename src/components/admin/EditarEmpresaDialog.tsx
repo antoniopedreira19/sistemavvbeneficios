@@ -21,7 +21,7 @@ const empresaSchema = z.object({
     .refine((val) => validateCNPJ(val), "CNPJ inválido"),
   email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
   telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["ativa", "em_implementacao"]),
+  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
 });
 
 type EmpresaFormData = z.infer<typeof empresaSchema>;
@@ -46,7 +46,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
     defaultValues: {
       nome: "",
       cnpj: "",
-      status: "ativa",
+      status: "sem_retorno",
     },
   });
 
@@ -92,7 +92,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
 
       if (error) throw error;
 
-      setContratoUrl(data.url); // Atualiza visualmente na hora
+      setContratoUrl(data.url);
       toast({ title: "Contrato enviado!", description: "Salvo no Google Drive com sucesso." });
       onSuccess?.();
     } catch (error: any) {
@@ -110,9 +110,6 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
-      let statusCrmUpdate = {};
-      if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
-
       const { error } = await supabase
         .from("empresas")
         .update({
@@ -124,8 +121,7 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: data.status,
-          ...statusCrmUpdate,
-        } as any)
+        })
         .eq("id", empresa.id);
 
       if (error) throw error;
@@ -307,8 +303,18 @@ export const EditarEmpresaDialog = ({ empresa, open, onOpenChange, onSuccess }: 
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
-                      <option value="ativa">✅ Ativa</option>
+                      <optgroup label="Funil CRM">
+                        <option value="sem_retorno">🔘 Sem Retorno</option>
+                        <option value="tratativa">💬 Em Tratativa</option>
+                        <option value="contrato_assinado">📝 Contrato Assinado</option>
+                        <option value="apolices_emitida">📄 Apólices Emitida</option>
+                        <option value="acolhimento">🤝 Acolhimento</option>
+                      </optgroup>
+                      <optgroup label="Status Final">
+                        <option value="ativa">✅ Ativa</option>
+                        <option value="inativa">⏸️ Inativa</option>
+                        <option value="cancelada">❌ Cancelada</option>
+                      </optgroup>
                     </select>
                     <FormMessage />
                   </FormItem>
