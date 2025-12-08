@@ -254,21 +254,23 @@ const EmpresaDetailDialog = ({
                     <SelectValue>
                       <Badge
                         variant="outline"
-                        className={STATUS_BADGE_VARIANTS[empresa.status_crm]}
+                        className={STATUS_BADGE_VARIANTS[empresa.status_crm] || "bg-muted text-muted-foreground"}
                       >
-                        {statusLabels[empresa.status_crm]}
+                        {statusLabels[empresa.status_crm] || empresa.status_crm}
                       </Badge>
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(statusLabels).map(([value, label]) => (
                       <SelectItem key={value} value={value}>
-                        <Badge
-                          variant="outline"
-                          className={STATUS_BADGE_VARIANTS[value]}
-                        >
-                          {label}
-                        </Badge>
+                        <div className="flex items-center">
+                          <Badge
+                            variant="outline"
+                            className={STATUS_BADGE_VARIANTS[value] || "bg-muted text-muted-foreground"}
+                          >
+                            {label}
+                          </Badge>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
