@@ -184,10 +184,6 @@ export const EditarEmpresaDialog = ({
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
-      let statusCrmUpdate = {};
-      if (data.status === "inativa" || data.status === "cancelada") statusCrmUpdate = { status_crm: "cancelada" };
-      else if (data.status === "ativa") statusCrmUpdate = { status_crm: "empresa_ativa" };
-
       const { error } = await supabase
         .from("empresas")
         .update({
@@ -199,7 +195,6 @@ export const EditarEmpresaDialog = ({
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: data.status,
-          ...statusCrmUpdate,
         })
         .eq("id", empresa.id);
 
@@ -404,9 +399,14 @@ export const EditarEmpresaDialog = ({
                       value={field.value}
                       onChange={field.onChange}
                     >
-                      <option value="em_implementacao">⚡ Em Implementação (CRM)</option>
-                      <option value="ativa">✅ Ativa</option>
-                      <option value="inativa">🚫 Inativa / Cancelada</option>
+                      <option value="sem_retorno">🔘 Sem Retorno</option>
+                      <option value="tratativa">🟡 Em Tratativa</option>
+                      <option value="contrato_assinado">🔵 Contrato Assinado</option>
+                      <option value="apolices_emitida">🟣 Apólices Emitida</option>
+                      <option value="acolhimento">🩵 Acolhimento</option>
+                      <option value="ativa">✅ Empresa Ativa</option>
+                      <option value="inativa">🔴 Inativa</option>
+                      <option value="cancelada">🟠 Cancelada</option>
                     </select>
                     <FormMessage />
                   </FormItem>
