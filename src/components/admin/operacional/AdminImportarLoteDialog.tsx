@@ -206,7 +206,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           data_nascimento: c.data_nascimento,
           salario: c.salario,
           classificacao_salario: c.classificacao_salario,
-          status: "ativo" as "ativo" | "desligado", // <--- CORREÇÃO AQUI (Cast Explicito)
+          status: "ativo" as "ativo" | "desligado",
         }));
 
         const { error: upsertError } = await supabase
@@ -264,7 +264,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a empresa..." />
                   </SelectTrigger>
-                  <SelectContent>
+
+                  {/* CORREÇÃO AQUI: max-h-[200px] para limitar altura da lista */}
+                  <SelectContent className="max-h-[200px]">
                     {empresas.map((e) => (
                       <SelectItem key={e.id} value={e.id}>
                         {e.nome}
@@ -307,7 +309,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione a obra..." />
                       </SelectTrigger>
-                      <SelectContent>
+
+                      {/* CORREÇÃO AQUI: max-h-[200px] também para obras */}
+                      <SelectContent className="max-h-[200px]">
                         {obras.map((o) => (
                           <SelectItem key={o.id} value={o.id}>
                             {o.nome}
