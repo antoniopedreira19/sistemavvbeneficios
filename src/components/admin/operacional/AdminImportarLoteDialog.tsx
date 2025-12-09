@@ -194,7 +194,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       let targetSheetName = "";
       let jsonData: any[][] = [];
 
-      // Procura inteligente da aba
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -217,12 +216,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       }
 
       if (!targetSheetName) {
-        toast.error("Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba.");
+        toast.error("Colunas 'Nome' e 'CPF' não encontradas. Verifique a planilha.");
         setLoading(false);
         return;
       }
-
-      toast.success(`Lendo aba: ${targetSheetName}`);
 
       const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
       const headers = rawHeaders.map(normalizarHeader);
@@ -248,10 +245,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const erros: string[] = [];
 
         if (!nome) erros.push("Nome ausente");
-        if (cpfLimpo.length !== 11) erros.push("CPF inválido");
+        if (cpfLimpo.length !== 11) erros.push("CPF tamanho inválido");
         else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido");
 
-        if (cpfsVistos.has(cpfLimpo)) erros.push("Duplicado");
+        if (cpfsVistos.has(cpfLimpo)) erros.push("Duplicado na planilha");
         if (cpfLimpo) cpfsVistos.add(cpfLimpo);
 
         processados.push({
@@ -284,19 +281,16 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
-  // --- CONFIRMAÇÃO BLINDADA ---
   const handleConfirmarImportacao = async () => {
     const validos = colaboradores.filter((c) => c.status === "valido");
     if (!selectedEmpresa || !selectedObra || validos.length === 0) return;
 
     setLoading(true);
-    let loteIdCriado: string | null = null; // Para rollback se necessário
+    let loteIdCriado: string | null = null;
 
     try {
-      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
-
-      // 1. INÍCIO: Criar (ou buscar) Lote com status PROVISÓRIO
-      // Usamos 'aguardando_processamento' para o trigger NÃO disparar ainda
+      // 1. Verificar/Criar Lote com status PROVISÓRIO ('aguardando_processamento')
+      // Isso evita travar o banco com gatilhos de faturamento antes da hora
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
         .select("id")
@@ -305,18 +299,16 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         .eq("competencia", competencia)
         .maybeSingle();
 
+      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
+
       if (loteExistente) {
         loteIdCriado = loteExistente.id;
-        console.log("Atualizando lote existente:", loteIdCriado);
-
-        // Reseta o lote para um estado seguro antes de mexer
+        // Reseta lote existente
         await supabase
           .from("lotes_mensais")
           .update({
             status: "aguardando_processamento", // Status seguro
             total_colaboradores: validos.length,
-            total_aprovados: 0,
-            total_reprovados: 0,
             valor_total: valorTotal,
             updated_at: new Date().toISOString(),
           })
@@ -330,12 +322,11 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             empresa_id: selectedEmpresa,
             obra_id: selectedObra,
             competencia: competencia,
-            status: "aguardando_processamento", // IMPORTANTE: Não use 'concluido' ainda
+            status: "aguardando_processamento", // Cria como seguro
             total_colaboradores: validos.length,
             total_aprovados: 0,
             total_reprovados: 0,
             valor_total: valorTotal,
-            enviado_seguradora_em: new Date().toISOString(),
           })
           .select()
           .single();
@@ -344,12 +335,11 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         loteIdCriado = novoLote.id;
       }
 
-      // 2. MEIO: Inserir Colaboradores (Base Mestra + Vínculo)
+      // 2. Processar Upsert na Tabela Mestra (Lotes de 100)
       const BATCH_SIZE = 100;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
 
-        // A. Upsert Mestra
         const mestraData = batch.map((c) => ({
           empresa_id: selectedEmpresa,
           obra_id: selectedObra,
@@ -362,16 +352,17 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           status: "ativo" as "ativo" | "desligado",
         }));
 
+        // CORREÇÃO: onConflict agora usa 'empresa_id, cpf' conforme a nova constraint do banco
         const { data: upsertedCols, error: upsertError } = await supabase
           .from("colaboradores")
-          .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
+          .upsert(mestraData, { onConflict: "empresa_id, cpf", ignoreDuplicates: false })
           .select("id, cpf");
 
         if (upsertError) throw new Error(`Erro ao salvar na base mestra: ${upsertError.message}`);
 
         const cpfToIdMap = new Map(upsertedCols?.map((c) => [c.cpf, c.id]));
 
-        // B. Insert Lote (Já aprovados)
+        // Insert Tabela Histórica
         const loteItemsData = batch.map((c) => ({
           lote_id: loteIdCriado,
           colaborador_id: cpfToIdMap.get(c.cpf),
@@ -381,7 +372,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           data_nascimento: c.data_nascimento,
           salario: c.salario,
           classificacao_salario: c.classificacao_salario,
-          status_seguradora: "aprovado", // Entra como aprovado
+          status_seguradora: "aprovado",
         }));
 
         const { error: itemsError } = await supabase.from("colaboradores_lote").insert(loteItemsData);
@@ -389,8 +380,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      // 3. FIM: Tudo certo? Agora sim, marcamos como CONCLUÍDO
-      // Isso vai disparar os gatilhos de faturamento com segurança
+      // 3. Tudo salvo? Agora vira CONCLUÍDO
       const { error: finalError } = await supabase
         .from("lotes_mensais")
         .update({
@@ -405,22 +395,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       toast.success("Sucesso! Lote importado e finalizado.");
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
-
-      // Reset
       setStep("selecao");
       setColaboradores([]);
-      setSelectedEmpresa("");
-      setSelectedObra("");
     } catch (error: any) {
       console.error(error);
       toast.error("Erro no processo: " + error.message);
-
-      // Rollback manual simples: Se deu erro e criamos um lote, apagamos ele para não ficar lixo
-      // (Opcional, mas recomendado para evitar "Lote vazio")
-      if (loteIdCriado) {
-        console.log("Fazendo rollback do lote...", loteIdCriado);
-        await supabase.from("lotes_mensais").delete().eq("id", loteIdCriado);
-      }
+      // Opcional: Se quiser apagar o lote em caso de erro, descomente:
+      // if (loteIdCriado) await supabase.from("lotes_mensais").delete().eq("id", loteIdCriado);
     } finally {
       setLoading(false);
     }
@@ -434,9 +415,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
-          <DialogDescription>
-            Importe uma lista já aprovada. O lote será criado e finalizado ao clicar em "Confirmar".
-          </DialogDescription>
+          <DialogDescription>Importe uma lista já aprovada.</DialogDescription>
         </DialogHeader>
 
         <div className="py-4 space-y-4 flex-1 overflow-y-auto pr-2">
@@ -512,7 +491,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
                           <Plus className="mr-2 h-4 w-4" />
-                        )}
+                        )}{" "}
                         Criar Obra Padrão (Nome da Empresa)
                       </Button>
                     </div>
