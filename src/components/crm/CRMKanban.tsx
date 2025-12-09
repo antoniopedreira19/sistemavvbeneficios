@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { EmpresaCRM, CRM_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import EmpresaDetailDialog from "./EmpresaDetailDialog";
 import { UploadContratoDialog } from "./UploadContratoDialog";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
 const CRM_COLUMNS = [
   { id: "sem_retorno", title: "Sem Retorno", color: "bg-slate-500" },
@@ -86,6 +87,12 @@ export function CRMKanban() {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [empresaParaContrato, setEmpresaParaContrato] = useState<EmpresaCRM | null>(null);
   const [pendingDragResult, setPendingDragResult] = useState<DropResult | null>(null);
+
+  // Realtime subscription for empresas
+  useRealtimeSubscription({
+    table: 'empresas',
+    queryKeys: ['empresas-ativas', 'empresas-inativas', 'crm-empresas', 'empresas-crm'],
+  });
 
   const scrollLeft = () => {
     if (scrollContainerRef.current) {

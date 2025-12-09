@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import EmpresaDetailDialog from "@/components/crm/EmpresaDetailDialog";
 import { EmpresaCRM, CRM_STATUS_LABELS } from "@/types/crm";
+import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -43,6 +44,12 @@ export function CRMList() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
   const queryClient = useQueryClient();
+
+  // Realtime subscription for empresas
+  useRealtimeSubscription({
+    table: 'empresas',
+    queryKeys: ['empresas-ativas', 'empresas-inativas', 'crm-empresas'],
+  });
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-ativas"],

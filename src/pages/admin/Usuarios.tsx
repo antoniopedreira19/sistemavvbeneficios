@@ -95,9 +95,9 @@ const Usuarios = () => {
 
     fetchEmpresas();
 
-    // Realtime subscription
-    const channel = supabase
-      .channel("usuarios-changes")
+    // Realtime subscription for profiles and user_roles
+    const profilesChannel = supabase
+      .channel("profiles-realtime")
       .on(
         "postgres_changes",
         {
@@ -111,10 +111,26 @@ const Usuarios = () => {
       )
       .subscribe();
 
+    const rolesChannel = supabase
+      .channel("roles-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_roles",
+        },
+        () => {
+          fetchUsuarios();
+        },
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(profilesChannel);
+      supabase.removeChannel(rolesChannel);
     };
-  }, []);
+  }, [fetchUsuarios]);
 
   const admins = usuarios.filter((u) => u.user_roles[0]?.role === "admin").length;
   const operacionais = usuarios.filter((u) => u.user_roles[0]?.role === "operacional").length;
