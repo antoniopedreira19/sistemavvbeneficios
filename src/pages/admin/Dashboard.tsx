@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-// CORREÇÃO: Adicionados todos os ícones que estavam faltando
 import {
   Building2,
   Wallet,
@@ -14,7 +13,7 @@ import {
   Filter,
   TrendingUp,
   Activity,
-  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import {
   ComposedChart,
@@ -36,7 +35,7 @@ import { ptBR } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Cores para gráficos
-const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"]; // Azul (M), Laranja/Rosa (F), Outro
+const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"]; // Azul (M), Laranja (F), Outro
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
 
 export default function Dashboard() {
@@ -51,10 +50,8 @@ export default function Dashboard() {
         .select("competencia")
         .order("created_at", { ascending: false });
 
-      // Remove duplicatas e retorna lista única
       const unique = Array.from(new Set(data?.map((d) => d.competencia))).filter(Boolean);
 
-      // Se não tiver nenhuma, fallback para o mês atual
       if (unique.length === 0) {
         const hoje = new Date();
         const mesAtual = format(hoje, "MMMM/yyyy", { locale: ptBR });
@@ -64,21 +61,38 @@ export default function Dashboard() {
     },
   });
 
-  // Define competência padrão ao carregar
   useEffect(() => {
     if (!selectedCompetencia && competencias.length > 0) {
       setSelectedCompetencia(competencias[0]);
     }
   }, [competencias, selectedCompetencia]);
 
-  // 2. QUERY PRINCIPAL (Baseada no Filtro)
+  // 2. QUERY PRINCIPAL
   const { data: dashboardData, isLoading } = useQuery({
-    queryKey: ["admin-dashboard-stats-v3", selectedCompetencia],
+    queryKey: ["admin-dashboard-stats-v4", selectedCompetencia],
     enabled: !!selectedCompetencia,
     queryFn: async () => {
       console.log("Buscando dados para:", selectedCompetencia);
 
-      // A. Lotes da Competência Selecionada
+      // --- DADOS GLOBAIS (SISTEMA) ---
+
+      // A. Empresas Ativas (Total na Carteira)
+      const { count: empresasAtivas } = await supabase
+        .from("empresas")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "ativa");
+
+      // B. Vidas Ativas Totais (Para Faturamento Esperado)
+      const { count: totalVidasAtivas } = await supabase
+        .from("colaboradores")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "ativo");
+
+      const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
+
+      // --- DADOS DA COMPETÊNCIA (FILTRO) ---
+
+      // C. Lotes do Mês Selecionado
       const { data: lotesMes } = await supabase
         .from("lotes_mensais")
         .select("id, empresa_id, status, total_colaboradores, valor_total, total_aprovados")
@@ -86,29 +100,30 @@ export default function Dashboard() {
 
       const lotesIds = lotesMes?.map((l) => l.id) || [];
 
-      // B. Dados Detalhados dos Colaboradores (Para Gênero e Salário)
-      // Buscamos apenas os campos necessários de TODOS os colaboradores vinculados aos lotes deste mês
-      // Nota: Se não houver lotes, essa query retorna vazio, o que é correto.
+      // D. Dados Detalhados (Para gráficos)
       let colaboradoresDetalhados: any[] = [];
       if (lotesIds.length > 0) {
         const { data } = await supabase.from("colaboradores_lote").select("sexo, salario").in("lote_id", lotesIds);
         colaboradoresDetalhados = data || [];
       }
 
-      // C. Faturamento Realizado (Notas Fiscais do Mês)
+      // E. Faturamento Realizado (Notas do Mês)
       const { data: notasMes } = await supabase
         .from("notas_fiscais")
         .select("valor_total")
         .eq("competencia", selectedCompetencia)
         .eq("nf_emitida", true);
 
-      // D. Dados Históricos (Para o gráfico de evolução - independente do filtro)
+      // F. Histórico (Para gráfico de evolução)
       const { data: historicoLotes } = await supabase
         .from("lotes_mensais")
         .select("competencia, total_colaboradores, valor_total, created_at")
         .order("created_at", { ascending: true });
 
       return {
+        empresasAtivas: empresasAtivas || 0,
+        faturamentoEsperado,
+        totalVidasAtivas: totalVidasAtivas || 0,
         lotesMes: lotesMes || [],
         colaboradores: colaboradoresDetalhados,
         notasMes: notasMes || [],
@@ -117,17 +132,17 @@ export default function Dashboard() {
     },
   });
 
-  // --- PROCESSAMENTO DE DADOS (Cálculos) ---
+  // --- CÁLCULOS ---
 
-  // 1. KPIs
+  // KPIs
   const totalEmpresasNoMes = new Set(dashboardData?.lotesMes.map((l) => l.empresa_id)).size || 0;
   const faturamentoRealizado = dashboardData?.notasMes.reduce((acc, nf) => acc + Number(nf.valor_total), 0) || 0;
   const totalVidasMes = dashboardData?.lotesMes.reduce((acc, l) => acc + (l.total_colaboradores || 0), 0) || 0;
 
-  // 2. Gráfico de Gênero (Pizza)
+  // Gráfico Gênero
   const genderStats =
     dashboardData?.colaboradores.reduce((acc: any, curr) => {
-      const sexo = curr.sexo ? curr.sexo.charAt(0).toUpperCase() : "N/A"; // M, F, ou N
+      const sexo = curr.sexo ? curr.sexo.charAt(0).toUpperCase() : "N/A";
       acc[sexo] = (acc[sexo] || 0) + 1;
       return acc;
     }, {}) || {};
@@ -137,14 +152,13 @@ export default function Dashboard() {
     { name: "Feminino", value: genderStats["F"] || 0 },
   ].filter((d) => d.value > 0);
 
-  // Adiciona porcentagem para o tooltip
   const genderTotal = genderChartData.reduce((acc, curr) => acc + curr.value, 0);
   const genderChartDataWithPct = genderChartData.map((d) => ({
     ...d,
     pct: genderTotal > 0 ? ((d.value / genderTotal) * 100).toFixed(1) + "%" : "0%",
   }));
 
-  // 3. Gráfico de Faixa Salarial (Barras)
+  // Gráfico Salário
   const salaryRanges = [
     { label: "Até 1.5k", min: 0, max: 1500, count: 0 },
     { label: "1.5k - 2.5k", min: 1500, max: 2500, count: 0 },
@@ -165,8 +179,7 @@ export default function Dashboard() {
     pct: totalVidasMes > 0 ? ((r.count / totalVidasMes) * 100).toFixed(1) + "%" : "0%",
   }));
 
-  // 4. Gráfico Evolução (Mantido do anterior)
-  // Agrupa por competência para somar valores se houver múltiplos lotes no mesmo mês
+  // Gráfico Evolução
   const evolutionMap = dashboardData?.historicoLotes?.reduce((acc: any, curr) => {
     if (!acc[curr.competencia]) {
       acc[curr.competencia] = { name: curr.competencia, vidas: 0, faturamento: 0 };
@@ -207,46 +220,63 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI CARDS (DADOS DO MÊS SELECIONADO) */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* Empresas que Enviaram */}
+      {/* KPI CARDS - GRID DE 5 (RESPONSIVO) */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {/* 1. GERAL: Empresas Ativas */}
         <KpiCard
-          title="Empresas no Mês"
-          value={totalEmpresasNoMes}
+          title="Empresas Ativas"
+          value={dashboardData?.empresasAtivas}
           icon={Building2}
-          description={`Enviaram arquivos em ${selectedCompetencia}`}
+          description="Total na carteira"
+        />
+
+        {/* 2. GERAL: Faturamento Esperado */}
+        <KpiCard
+          title="Faturamento Esperado"
+          value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
+          icon={Wallet}
+          description="Potencial (Vidas Totais)"
           iconColor="text-blue-600"
         />
 
-        {/* Vidas Processadas */}
+        {/* 3. MÊS: Empresas que Enviaram */}
         <KpiCard
-          title="Vidas Processadas"
-          value={totalVidasMes}
-          icon={Users}
-          description="Total de colaboradores nos lotes"
+          title="Empresas no Mês"
+          value={totalEmpresasNoMes}
+          icon={CheckCircle2}
+          description={`Enviaram em ${selectedCompetencia.split("/")[0]}`}
           iconColor="text-purple-600"
         />
 
-        {/* Faturamento */}
+        {/* 4. MÊS: Vidas Processadas */}
         <KpiCard
-          title="Faturamento Realizado"
-          value={`R$ ${faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          title="Vidas no Mês"
+          value={totalVidasMes}
+          icon={Users}
+          description="Total processado"
+          iconColor="text-orange-600"
+        />
+
+        {/* 5. MÊS: Faturamento Realizado */}
+        <KpiCard
+          title="Faturamento Real"
+          value={`R$ ${faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
           icon={DollarSign}
-          description="Notas Fiscais emitidas nesta competência"
+          description="Notas Emitidas"
           iconColor="text-green-600"
+          highlight
         />
       </div>
 
       {/* GRÁFICOS DETALHADOS */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* GRÁFICO DE GÊNERO (PIZZA) */}
+        {/* GÊNERO */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <PieIcon className="h-5 w-5 text-primary" />
               Distribuição por Gênero
             </CardTitle>
-            <CardDescription>Perfil dos colaboradores em {selectedCompetencia}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full flex items-center justify-center">
@@ -272,20 +302,19 @@ export default function Dashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-muted-foreground text-sm">Sem dados de gênero para este mês.</div>
+                <div className="text-muted-foreground text-sm">Sem dados para este mês.</div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* GRÁFICO DE FAIXA SALARIAL (BARRAS) */}
+        {/* FAIXA SALARIAL */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <BarChart3 className="h-5 w-5 text-primary" />
               Faixa Salarial
             </CardTitle>
-            <CardDescription>Distribuição de renda dos colaboradores</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full">
@@ -306,7 +335,7 @@ export default function Dashboard() {
                         "Quantidade",
                       ]}
                     />
-                    <Bar dataKey="quantidade" fill="#8884d8" radius={[0, 4, 4, 0]} barSize={30}>
+                    <Bar dataKey="quantidade" fill="#8884d8" radius={[0, 4, 4, 0]} barSize={25}>
                       {salaryChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS_SALARY[index % COLORS_SALARY.length]} />
                       ))}
@@ -323,14 +352,14 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* GRÁFICO DE EVOLUÇÃO (MANTIDO NO RODAPÉ) */}
+      {/* GRÁFICO DE EVOLUÇÃO */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
             <TrendingUp className="h-5 w-5 text-primary" />
             Histórico de Evolução (Geral)
           </CardTitle>
-          <CardDescription>Comparativo dos últimos 6 meses (independente do filtro)</CardDescription>
+          <CardDescription>Comparativo dos últimos 6 meses</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] w-full">
@@ -384,14 +413,14 @@ function KpiCard({
   iconColor = "text-muted-foreground",
 }: any) {
   return (
-    <Card className={highlight ? "border-red-500 bg-red-50" : ""}>
+    <Card className={highlight ? "border-green-500 bg-green-50" : ""}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className={`h-4 w-4 ${highlight ? "text-red-500" : iconColor}`} />
+        <Icon className={`h-4 w-4 ${highlight ? "text-green-600" : iconColor}`} />
       </CardHeader>
       <CardContent>
-        <div className={`text-2xl font-bold ${highlight ? "text-red-600" : ""}`}>{value}</div>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <div className={`text-2xl font-bold ${highlight ? "text-green-700" : ""}`}>{value}</div>
+        <p className="text-xs text-muted-foreground truncate">{description}</p>
       </CardContent>
     </Card>
   );
@@ -404,7 +433,9 @@ function DashboardSkeleton() {
         <Skeleton className="h-10 w-48" />
         <Skeleton className="h-10 w-32" />
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-5">
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
         <Skeleton className="h-32" />
         <Skeleton className="h-32" />
         <Skeleton className="h-32" />
