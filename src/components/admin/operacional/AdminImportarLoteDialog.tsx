@@ -6,8 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building } from "lucide-react";
+import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 
 const CLASSIFICACOES_SALARIO = [
@@ -41,7 +43,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   const [colaboradores, setColaboradores] = useState<any[]>([]);
 
-  // Carregar Empresas Ativas
   useEffect(() => {
     if (open) {
       supabase
@@ -70,7 +71,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   }, [open]);
 
-  // Carregar Obras
   useEffect(() => {
     if (selectedEmpresa) {
       setLoading(true);
@@ -88,7 +88,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   }, [selectedEmpresa]);
 
-  // Criar Obra Automática
   const createObraMutation = useMutation({
     mutationFn: async () => {
       const empresa = empresas.find((e) => e.id === selectedEmpresa);
@@ -249,13 +248,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
           <DialogDescription>Importe uma lista já aprovada diretamente para o status "Concluído".</DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 space-y-4">
+        <div className="py-4 space-y-4 flex-1 overflow-y-auto pr-2">
           {step === "selecao" && (
             <div className="space-y-4 animate-in fade-in">
               <div className="space-y-2">
@@ -264,8 +263,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a empresa..." />
                   </SelectTrigger>
-
-                  {/* CORREÇÃO AQUI: max-h-[200px] para limitar altura da lista */}
                   <SelectContent className="max-h-[200px]">
                     {empresas.map((e) => (
                       <SelectItem key={e.id} value={e.id}>
@@ -279,7 +276,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
               {selectedEmpresa && (
                 <div className="space-y-2">
                   <Label>Obra / Filial</Label>
-                  {/* LÓGICA DE OBRA VAZIA */}
                   {obras.length === 0 && !loading ? (
                     <div className="border border-dashed border-yellow-300 bg-yellow-50 rounded-lg p-4 text-center space-y-3">
                       <div className="flex justify-center text-yellow-600">
@@ -309,8 +305,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione a obra..." />
                       </SelectTrigger>
-
-                      {/* CORREÇÃO AQUI: max-h-[200px] também para obras */}
                       <SelectContent className="max-h-[200px]">
                         {obras.map((o) => (
                           <SelectItem key={o.id} value={o.id}>
@@ -344,16 +338,15 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
           {step === "upload" && (
             <div className="space-y-4 animate-in fade-in text-center">
-              <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 hover:bg-muted/10 transition-colors">
-                <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-4" />
-                <h3 className="font-medium">Carregar Planilha</h3>
-                <p className="text-sm text-muted-foreground mb-4">Selecione o arquivo .xlsx com a lista final</p>
+              <div
+                className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-12 hover:bg-muted/10 transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="font-medium text-lg">Carregar Planilha (.xlsx)</h3>
+                <p className="text-sm text-muted-foreground">Clique para selecionar o arquivo do seu computador</p>
 
                 <Input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileUpload} />
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-                  {loading ? <Loader2 className="animate-spin mr-2" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
-                  Selecionar Arquivo
-                </Button>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setStep("selecao")}>
                 Voltar
@@ -362,19 +355,69 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           )}
 
           {step === "conclusao" && (
-            <div className="space-y-4 animate-in fade-in">
+            <div className="space-y-6 animate-in fade-in">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 flex items-start gap-3">
                 <CheckCircle className="h-5 w-5 mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-bold">Arquivo Processado!</p>
+                  <p className="font-bold">Arquivo Processado com Sucesso!</p>
                   <p className="text-sm mt-1">
-                    Detectamos <strong>{colaboradores.length} colaboradores</strong>.<br />
-                    Ao confirmar, um lote será criado automaticamente como <strong>CONCLUÍDO</strong>.
+                    Detectamos <strong>{colaboradores.length} colaboradores</strong> válidos.
                   </p>
                 </div>
               </div>
 
-              <div className="flex justify-between pt-4">
+              {/* TABELA DE PRÉ-VISUALIZAÇÃO (Igual ao Cliente) */}
+              <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>CPF</TableHead>
+                      <TableHead>Cargo Estimado</TableHead>
+                      <TableHead className="text-right">Salário</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {colaboradores.slice(0, 100).map((colab, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{colab.nome}</TableCell>
+                        <TableCell className="font-mono text-xs">{colab.cpf}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[10px] whitespace-nowrap">
+                            {colab.classificacao_salario}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {colab.salario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {colaboradores.length > 100 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 100} colaboradores.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-yellow-400" aria-hidden="true" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-yellow-700">
+                      Ao confirmar, este lote será criado com status <strong>CONCLUÍDO</strong> e estará pronto para
+                      faturamento. Certifique-se de que a lista está correta.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between pt-4 border-t">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -382,15 +425,15 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                     setColaboradores([]);
                   }}
                 >
-                  Cancelar / Trocar
+                  Trocar Arquivo
                 </Button>
                 <Button
                   onClick={handleConfirmarImportacao}
                   disabled={loading}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                 >
-                  {loading ? <Loader2 className="animate-spin mr-2" /> : null}
-                  Confirmar Importação
+                  {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                  Confirmar e Finalizar
                 </Button>
               </div>
             </div>
