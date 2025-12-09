@@ -184,15 +184,16 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       const headers = rawHeaders.map(normalizeHeader);
 
-      // 2. Mapear Índices das Colunas
+      // 2. Mapear Índices das Colunas (com múltiplas variações)
       const mapIndex = (possibleNames: string[]) =>
-        headers.findIndex((h) => possibleNames.some((name) => h.includes(name)));
+        headers.findIndex((h) => possibleNames.some((name) => h.includes(name) || name.includes(h)));
 
-      const idxNome = mapIndex(["nome", "funcionario", "colaborador"]);
-      const idxCPF = mapIndex(["cpf", "documento"]);
-      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao"]);
-      const idxNasc = mapIndex(["nascimento", "data", "dtnasc"]);
-      const idxSexo = mapIndex(["sexo", "genero"]);
+      // Variações amplas para cada coluna
+      const idxNome = mapIndex(["nome", "funcionario", "colaborador", "empregado", "trabalhador", "nomecolaborador", "nomefuncionario", "nometrabalhador"]);
+      const idxCPF = mapIndex(["cpf", "documento", "doc", "cpfcnpj", "numcpf"]);
+      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao", "sal", "renda", "valor", "pagamento", "vencimentos"]);
+      const idxNasc = mapIndex(["nascimento", "nasc", "dtnasc", "dtnascimento", "datanasc", "datanascimento", "datadenasc", "datadenascimento", "dtdenascimento"]);
+      const idxSexo = mapIndex(["sexo", "genero", "gen", "sx", "masculinofeminino"]);
 
       if (idxNome === -1 || idxCPF === -1 || idxSalario === -1) {
         toast.error("Não encontramos as colunas: Nome, CPF e Salário. Verifique o arquivo.");
