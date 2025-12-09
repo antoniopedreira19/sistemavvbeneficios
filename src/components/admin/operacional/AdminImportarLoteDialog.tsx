@@ -292,7 +292,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         // CORREÇÃO: Pegar os dados retornados (id, cpf) para vincular depois
         const { data: upsertedCols, error: upsertError } = await supabase
           .from("colaboradores")
-          .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
+          .upsert(mestraData, { onConflict: "cpf,empresa_id", ignoreDuplicates: false })
           .select("id, cpf"); // <--- Importante: Retorna o ID gerado/existente
 
         if (upsertError) {
