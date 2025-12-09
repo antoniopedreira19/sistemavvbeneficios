@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateCPF, formatCPF } from "@/lib/validators";
-import { findHeaderRowIndex, mapColumnIndexes, validateRequiredColumns } from "@/lib/excelImportUtils";
 
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
@@ -29,9 +28,16 @@ const calcularClassificacao = (salario: number) => {
   return item?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
-// Helpers de normalização (Robustez para o Excel)
-const normalizarSexo = (valor: any): string | null => {
-  if (!valor) return "M"; // Default
+// Helpers
+const normalizarHeader = (h: string) =>
+  h
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const normalizarSexo = (valor: any): string => {
+  if (!valor) return "Masculino";
   const str = String(valor).trim().toLowerCase();
   if (["masculino", "masc", "m"].includes(str)) return "Masculino";
   if (["feminino", "fem", "f"].includes(str)) return "Feminino";
@@ -41,28 +47,22 @@ const normalizarSexo = (valor: any): string | null => {
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
-  // Remove R$, espaços e converte vírgula para ponto
   const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
 
 const normalizarData = (valor: any): string => {
-  if (!valor) return new Date().toISOString().split("T")[0]; // Fallback hoje
-
+  if (!valor) return new Date().toISOString().split("T")[0];
   const str = String(valor).trim();
-  // DD/MM/AAAA
   const ddmmyyyy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
-
-  // Excel Serial Date
   if (!isNaN(Number(valor))) {
     const excelDate = XLSX.SSF.parse_date_code(Number(valor));
     if (excelDate)
       return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
   }
-
-  return str; // Tenta retornar como está se for ISO
+  return str;
 };
 
 export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -162,57 +162,67 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
 
-      // Lê como Matriz de Matrizes (mais seguro para achar cabeçalhos)
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+      let targetSheetName = "";
+      let jsonData: any[][] = [];
 
-      if (jsonData.length < 2) {
-        toast.error("Arquivo vazio ou inválido.");
+      // Procura inteligente da aba correta
+      for (const sheetName of workbook.SheetNames) {
+        const worksheet = workbook.Sheets[sheetName];
+        const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        if (tempJson.length > 0) {
+          const rawHeaders = tempJson[0].map((h: any) => String(h || "").trim());
+          const headers = rawHeaders.map(normalizarHeader);
+          const hasNome = headers.some((h) => ["nome", "funcionario", "colaborador"].some((n) => h.includes(n)));
+          const hasCPF = headers.some((h) => ["cpf", "documento"].some((n) => h.includes(n)));
+
+          if (hasNome && hasCPF) {
+            targetSheetName = sheetName;
+            jsonData = tempJson;
+            break;
+          }
+        }
+      }
+
+      if (!targetSheetName) {
+        toast.error("Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba.");
         setLoading(false);
         return;
       }
 
-      // 1. Encontrar a linha de cabeçalho (pula linhas em branco no topo)
-      const headerRowIndex = findHeaderRowIndex(jsonData);
-      const rawHeaders = jsonData[headerRowIndex].map((h: any) => String(h || "").trim());
+      toast.success(`Lendo aba: ${targetSheetName}`);
 
-      // 2. Mapear Índices das Colunas usando utilitário
-      const { idxNome, idxCPF, idxSalario, idxNasc, idxSexo } = mapColumnIndexes(rawHeaders);
+      const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
+      const headers = rawHeaders.map(normalizarHeader);
+      const mapIndex = (possibleNames: string[]) =>
+        headers.findIndex((h) => possibleNames.some((name) => h.includes(name)));
 
-      // 3. Validar colunas obrigatórias
-      const missingColumns = validateRequiredColumns({ idxNome, idxCPF, idxSalario, idxNasc, idxSexo });
-      if (missingColumns.length > 0) {
-        toast.error(`Colunas não encontradas: ${missingColumns.join(", ")}. Verifique o arquivo.`);
-        setLoading(false);
-        return;
-      }
+      const idxNome = mapIndex(["nome", "funcionario", "colaborador"]);
+      const idxCPF = mapIndex(["cpf", "documento"]);
+      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao"]);
+      const idxNasc = mapIndex(["nascimento", "data", "dtnasc"]);
+      const idxSexo = mapIndex(["sexo", "genero"]);
 
-      // 4. Processar Linhas (começa após o cabeçalho)
       const validos = [];
-      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+      for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        // Pula linhas vazias
-        if (!row || row.length === 0 || row.every((cell: any) => !cell || String(cell).trim() === "")) continue;
+        if (!row || row.length === 0) continue;
 
         const nome = row[idxNome];
         const cpfRaw = row[idxCPF];
 
-        // Pula linha se não tiver nome ou CPF
         if (!nome || !cpfRaw) continue;
 
-        const salario = normalizarSalario(row[idxSalario]);
+        const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
         const cpfLimpo = String(cpfRaw).replace(/\D/g, "");
 
-        // Validação mínima de CPF
         if (cpfLimpo.length !== 11) continue;
 
         validos.push({
           nome: String(nome).toUpperCase().trim(),
           cpf: cpfLimpo,
-          sexo: normalizarSexo(row[idxSexo]),
-          data_nascimento: normalizarData(row[idxNasc]),
+          sexo: idxSexo !== -1 ? normalizarSexo(row[idxSexo]) : "Masculino",
+          data_nascimento: idxNasc !== -1 ? normalizarData(row[idxNasc]) : new Date().toISOString().split("T")[0],
           salario: salario,
           classificacao_salario: calcularClassificacao(salario),
         });
@@ -226,7 +236,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       setColaboradores(validos);
       setStep("conclusao");
-      toast.success(`${validos.length} colaboradores identificados!`);
     } catch (error) {
       console.error(error);
       toast.error("Erro ao ler arquivo.");
@@ -240,6 +249,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
     setLoading(true);
     try {
+      // 1. Criar Lote
       const valorTotal = colaboradores.reduce((acc, c) => acc + 50, 0);
 
       const { data: lote, error: loteError } = await supabase
@@ -261,10 +271,12 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       if (loteError) throw loteError;
 
+      // 2. Processar em Batches (Lotes de 100)
       const BATCH_SIZE = 100;
       for (let i = 0; i < colaboradores.length; i += BATCH_SIZE) {
         const batch = colaboradores.slice(i, i + BATCH_SIZE);
 
+        // A. Upsert na Mestra e RETORNAR IDs
         const mestraData = batch.map((c) => ({
           empresa_id: selectedEmpresa,
           obra_id: selectedObra,
@@ -277,14 +289,26 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           status: "ativo" as "ativo" | "desligado",
         }));
 
-        const { error: upsertError } = await supabase
+        // CORREÇÃO: Pegar os dados retornados (id, cpf) para vincular depois
+        const { data: upsertedCols, error: upsertError } = await supabase
           .from("colaboradores")
-          .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false });
+          .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
+          .select("id, cpf"); // <--- Importante: Retorna o ID gerado/existente
 
-        if (upsertError) console.error("Erro upsert mestre", upsertError);
+        if (upsertError) {
+          console.error("Erro upsert mestre", upsertError);
+          throw new Error(`Erro ao salvar colaborador na base mestra: ${upsertError.message}`);
+        }
 
+        if (!upsertedCols) throw new Error("Erro: Nenhum dado retornado do upsert.");
+
+        // Criar mapa CPF -> ID para vincular rápido
+        const cpfToIdMap = new Map(upsertedCols.map((c) => [c.cpf, c.id]));
+
+        // B. Insert na Tabela de Lote (Com vínculo correto)
         const loteItemsData = batch.map((c) => ({
           lote_id: lote.id,
+          colaborador_id: cpfToIdMap.get(c.cpf), // <--- VÍNCULO CORRETO AQUI
           nome: c.nome,
           cpf: c.cpf,
           sexo: c.sexo,
@@ -299,17 +323,18 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      toast.success("Lote importado e finalizado com sucesso!");
+      toast.success("Importação concluída e Lote Finalizado!");
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
 
+      // Reset
       setStep("selecao");
       setColaboradores([]);
       setSelectedEmpresa("");
       setSelectedObra("");
     } catch (error: any) {
       console.error(error);
-      toast.error("Erro ao salvar: " + error.message);
+      toast.error("Erro no processo: " + error.message);
     } finally {
       setLoading(false);
     }
