@@ -478,7 +478,6 @@ const MinhaEquipe = () => {
         <NovaObraDialog
           open={isNovaObraOpen}
           onOpenChange={setIsNovaObraOpen}
-          empresaId={empresaId}
           onSuccess={handleNovaObraSuccess}
         />
       )}
@@ -486,10 +485,7 @@ const MinhaEquipe = () => {
       {/* 5. Novo Colaborador (NOVO) */}
       {empresaId && (
         <NovoColaboradorDialog
-          open={isNovoColaboradorOpen}
-          onOpenChange={setIsNovoColaboradorOpen}
-          empresaId={empresaId}
-          obras={obras || []}
+          obraId={selectedObra !== "all" ? selectedObra : undefined}
           onSuccess={handleNovoColaboradorSuccess}
         />
       )}
