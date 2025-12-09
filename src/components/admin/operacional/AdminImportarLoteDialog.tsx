@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -19,6 +20,8 @@ import {
   Plus,
   Building,
   AlertTriangle,
+  XCircle,
+  CheckCircle2,
   Check,
   ChevronsUpDown,
 } from "lucide-react";
@@ -78,6 +81,18 @@ const normalizarData = (valor: any): string => {
   return str;
 };
 
+interface ValidatedRow {
+  linha: number;
+  nome: string;
+  cpf: string;
+  sexo: string;
+  data_nascimento: string;
+  salario: number;
+  classificacao_salario: string;
+  status: "valido" | "erro";
+  erros: string[];
+}
+
 export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,9 +106,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [selectedEmpresa, setSelectedEmpresa] = useState("");
   const [selectedObra, setSelectedObra] = useState("");
   const [competencia, setCompetencia] = useState("");
-  const [openCombobox, setOpenCombobox] = useState(false); // Controle do Combobox
+  const [openCombobox, setOpenCombobox] = useState(false);
 
-  const [colaboradores, setColaboradores] = useState<any[]>([]);
+  const [colaboradores, setColaboradores] = useState<ValidatedRow[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -168,6 +183,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     },
   });
 
+  // --- LEITURA DO ARQUIVO (Apenas Memória) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -177,6 +193,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
 
+      // Lógica de busca de aba (já corrigida para achar "Relação de Vidas" etc)
       let targetSheetName = "";
       let jsonData: any[][] = [];
 
@@ -184,21 +201,27 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const worksheet = workbook.Sheets[sheetName];
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         if (tempJson.length > 0) {
-          const rawHeaders = tempJson[0].map((h: any) => String(h || "").trim());
-          const headers = rawHeaders.map(normalizarHeader);
-          const hasNome = headers.some((h) => ["nome", "funcionario", "colaborador"].some((n) => h.includes(n)));
-          const hasCPF = headers.some((h) => ["cpf", "documento"].some((n) => h.includes(n)));
+          // Verifica várias linhas iniciais caso tenha cabeçalho vazio
+          for (let i = 0; i < Math.min(5, tempJson.length); i++) {
+            const row = tempJson[i];
+            const rawHeaders = row.map((h: any) => String(h || "").trim());
+            const headers = rawHeaders.map(normalizarHeader);
+            const hasNome = headers.some((h) => ["nome", "funcionario", "colaborador"].some((n) => h.includes(n)));
+            const hasCPF = headers.some((h) => ["cpf", "documento"].some((n) => h.includes(n)));
 
-          if (hasNome && hasCPF) {
-            targetSheetName = sheetName;
-            jsonData = tempJson;
-            break;
+            if (hasNome && hasCPF) {
+              targetSheetName = sheetName;
+              // Remove as linhas acima do cabeçalho para processamento
+              jsonData = tempJson.slice(i);
+              break;
+            }
           }
+          if (targetSheetName) break;
         }
       }
 
       if (!targetSheetName) {
-        toast.error("Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba.");
+        toast.error("Colunas 'Nome' e 'CPF' não encontradas em nenhuma aba.");
         setLoading(false);
         return;
       }
@@ -207,53 +230,58 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
       const headers = rawHeaders.map(normalizarHeader);
-      const mapIndex = (possibleNames: string[]) =>
-        headers.findIndex((h) => possibleNames.some((name) => h.includes(name)));
 
-      const idxNome = mapIndex(["nome", "funcionario", "colaborador"]);
-      const idxCPF = mapIndex(["cpf", "documento"]);
-      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao"]);
-      const idxNasc = mapIndex(["nascimento", "data", "dtnasc"]);
-      const idxSexo = mapIndex(["sexo", "genero"]);
+      const idxNome = headers.findIndex((h) => ["nome", "funcionario", "colaborador"].some((n) => h.includes(n)));
+      const idxCPF = headers.findIndex((h) => ["cpf", "documento"].some((n) => h.includes(n)));
+      const idxSalario = headers.findIndex((h) => ["salario", "vencimento", "remuneracao"].some((n) => h.includes(n)));
+      const idxNasc = headers.findIndex((h) => ["nascimento", "data", "dtnasc"].some((n) => h.includes(n)));
+      const idxSexo = headers.findIndex((h) => ["sexo", "genero"].some((n) => h.includes(n)));
 
-      const validos = [];
+      const processados: ValidatedRow[] = [];
       const cpfsVistos = new Set<string>();
 
+      // Começa da linha 1 (pós-cabeçalho)
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0) continue;
 
-        const nome = row[idxNome];
-        const cpfRaw = row[idxCPF];
-
-        if (!nome || !cpfRaw) continue;
-
+        const nome = row[idxNome] ? String(row[idxNome]).trim() : "";
+        const cpfRaw = row[idxCPF] ? String(row[idxCPF]) : "";
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
-        const cpfLimpo = String(cpfRaw).replace(/\D/g, "");
 
-        if (cpfLimpo.length !== 11) continue;
-        if (cpfsVistos.has(cpfLimpo)) continue;
-        cpfsVistos.add(cpfLimpo);
+        const cpfLimpo = cpfRaw.replace(/\D/g, "");
+        const erros: string[] = [];
 
-        validos.push({
-          nome: String(nome).toUpperCase().trim(),
+        if (!nome) erros.push("Nome ausente");
+        if (cpfLimpo.length !== 11) erros.push("CPF tamanho inválido");
+        else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido");
+
+        if (cpfsVistos.has(cpfLimpo)) {
+          erros.push("Duplicado na planilha");
+        }
+        if (cpfLimpo) cpfsVistos.add(cpfLimpo);
+
+        processados.push({
+          linha: i + 1,
+          nome: nome.toUpperCase(),
           cpf: cpfLimpo,
           sexo: idxSexo !== -1 ? normalizarSexo(row[idxSexo]) : "Masculino",
           data_nascimento: idxNasc !== -1 ? normalizarData(row[idxNasc]) : new Date().toISOString().split("T")[0],
           salario: salario,
           classificacao_salario: calcularClassificacao(salario),
-          status: "valido", // Assume válido se passou filtro básico (para simplificar UX do Admin)
-          erros: [],
+          status: erros.length > 0 ? "erro" : "valido",
+          erros: erros,
         });
       }
 
-      if (validos.length === 0) {
-        toast.error("Nenhum colaborador válido encontrado.");
+      if (processados.length === 0) {
+        toast.error("Nenhum dado encontrado.");
         setLoading(false);
         return;
       }
 
-      setColaboradores(validos);
+      processados.sort((a, b) => (a.status === "erro" ? -1 : 1));
+      setColaboradores(processados);
       setStep("conclusao");
     } catch (error) {
       console.error(error);
@@ -263,36 +291,74 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
+  // --- CONFIRMAÇÃO FINAL (Único momento que toca no Banco) ---
   const handleConfirmarImportacao = async () => {
-    if (!selectedEmpresa || !selectedObra || colaboradores.length === 0) return;
+    const validos = colaboradores.filter((c) => c.status === "valido");
+    if (!selectedEmpresa || !selectedObra || validos.length === 0) return;
 
     setLoading(true);
     try {
-      const valorTotal = colaboradores.reduce((acc, c) => acc + 50, 0);
+      // 1. Verificar se JÁ EXISTE Lote para esta competência (Idempotência)
+      let loteId = "";
 
-      const { data: lote, error: loteError } = await supabase
+      const { data: loteExistente } = await supabase
         .from("lotes_mensais")
-        .insert({
-          empresa_id: selectedEmpresa,
-          obra_id: selectedObra,
-          competencia: competencia,
-          status: "concluido",
-          total_colaboradores: colaboradores.length,
-          total_aprovados: colaboradores.length,
-          total_reprovados: 0,
-          valor_total: valorTotal,
-          enviado_seguradora_em: new Date().toISOString(),
-          aprovado_em: new Date().toISOString(),
-        })
-        .select()
-        .single();
+        .select("id")
+        .eq("empresa_id", selectedEmpresa)
+        .eq("obra_id", selectedObra)
+        .eq("competencia", competencia)
+        .maybeSingle(); // Retorna null se não achar, em vez de erro
 
-      if (loteError) throw loteError;
+      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
+      if (loteExistente) {
+        // MODO ATUALIZAÇÃO: Se já existe, atualizamos o lote e limpamos itens antigos
+        loteId = loteExistente.id;
+        console.log("Atualizando lote existente:", loteId);
+
+        await supabase
+          .from("lotes_mensais")
+          .update({
+            status: "concluido",
+            total_colaboradores: validos.length,
+            total_aprovados: validos.length,
+            total_reprovados: 0,
+            valor_total: valorTotal,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", loteId);
+
+        // Limpa itens antigos para evitar duplicação ou conflito
+        await supabase.from("colaboradores_lote").delete().eq("lote_id", loteId);
+      } else {
+        // MODO CRIAÇÃO: Cria lote novo
+        const { data: novoLote, error: createError } = await supabase
+          .from("lotes_mensais")
+          .insert({
+            empresa_id: selectedEmpresa,
+            obra_id: selectedObra,
+            competencia: competencia,
+            status: "concluido",
+            total_colaboradores: validos.length,
+            total_aprovados: validos.length,
+            total_reprovados: 0,
+            valor_total: valorTotal,
+            enviado_seguradora_em: new Date().toISOString(),
+            aprovado_em: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        loteId = novoLote.id;
+      }
+
+      // 2. Processar Itens em Lote
       const BATCH_SIZE = 100;
-      for (let i = 0; i < colaboradores.length; i += BATCH_SIZE) {
-        const batch = colaboradores.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < validos.length; i += BATCH_SIZE) {
+        const batch = validos.slice(i, i + BATCH_SIZE);
 
+        // A. Upsert Mestra (Colaboradores)
         const mestraData = batch.map((c) => ({
           empresa_id: selectedEmpresa,
           obra_id: selectedObra,
@@ -310,13 +376,14 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
           .select("id, cpf");
 
-        if (upsertError) throw new Error(`Erro ao salvar na base mestra: ${upsertError.message}`);
-        if (!upsertedCols) throw new Error("Erro: Nenhum dado retornado do upsert.");
+        if (upsertError) throw new Error(`Erro ao atualizar cadastro: ${upsertError.message}`);
 
-        const cpfToIdMap = new Map(upsertedCols.map((c) => [c.cpf, c.id]));
+        // Mapeia CPF -> ID gerado
+        const cpfToIdMap = new Map(upsertedCols?.map((c) => [c.cpf, c.id]));
 
+        // B. Insert Histórico (Itens do Lote)
         const loteItemsData = batch.map((c) => ({
-          lote_id: lote.id,
+          lote_id: loteId,
           colaborador_id: cpfToIdMap.get(c.cpf),
           nome: c.nome,
           cpf: c.cpf,
@@ -332,9 +399,11 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      toast.success("Lote importado e finalizado com sucesso!");
+      toast.success("Sucesso! Lote finalizado.");
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
+
+      // Reset
       setStep("selecao");
       setColaboradores([]);
       setSelectedEmpresa("");
@@ -347,12 +416,17 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
+  const totalValidos = colaboradores.filter((c) => c.status === "valido").length;
+  const totalErros = colaboradores.filter((c) => c.status === "erro").length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
-          <DialogDescription>Importe uma lista já aprovada diretamente para o status "Concluído".</DialogDescription>
+          <DialogDescription>
+            Importe uma lista já aprovada. O lote será criado apenas ao clicar em "Confirmar".
+          </DialogDescription>
         </DialogHeader>
 
         <div className="py-4 space-y-4 flex-1 overflow-y-auto pr-2">
@@ -360,8 +434,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             <div className="space-y-4 animate-in fade-in">
               <div className="space-y-2">
                 <Label>Empresa Cliente</Label>
-
-                {/* COMBOBOX (SEARCHABLE SELECT) */}
                 <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
                   <PopoverTrigger asChild>
                     <Button
@@ -385,7 +457,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                           {empresas.map((empresa) => (
                             <CommandItem
                               key={empresa.id}
-                              value={empresa.nome} // Filtra pelo nome
+                              value={empresa.nome}
                               onSelect={() => {
                                 setSelectedEmpresa(empresa.id);
                                 setOpenCombobox(false);
@@ -470,7 +542,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             </div>
           )}
 
-          {/* ... MANTÉM OS OUTROS STEPS (UPLOAD E CONCLUSAO) IGUAIS ... */}
           {step === "upload" && (
             <div className="space-y-4 animate-in fade-in text-center">
               <div
@@ -480,7 +551,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="font-medium text-lg">Carregar Planilha (.xlsx)</h3>
                 <p className="text-sm text-muted-foreground">Clique para selecionar o arquivo do seu computador</p>
-
                 <Input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileUpload} />
               </div>
               <Button variant="ghost" size="sm" onClick={() => setStep("selecao")}>
@@ -491,48 +561,58 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
           {step === "conclusao" && (
             <div className="space-y-6 animate-in fade-in">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-bold">Arquivo Processado com Sucesso!</p>
-                  <p className="text-sm mt-1">
-                    Detectamos <strong>{colaboradores.length} colaboradores</strong> válidos.
-                  </p>
-                </div>
+              <div className="flex gap-4">
+                <Alert className="bg-green-50 border-green-200 flex-1">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertTitle className="text-green-800">Prontos para Importar</AlertTitle>
+                  <AlertDescription className="text-green-700">{totalValidos} colaboradores válidos.</AlertDescription>
+                </Alert>
+                {totalErros > 0 && (
+                  <Alert className="bg-red-50 border-red-200 flex-1">
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <AlertTitle className="text-red-800">Erros Encontrados</AlertTitle>
+                    <AlertDescription className="text-red-700">{totalErros} linhas serão ignoradas.</AlertDescription>
+                  </Alert>
+                )}
               </div>
 
-              <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+              <div className="border rounded-lg max-h-[400px] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[50px]">Ln</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
-                      <TableHead>Cargo Estimado</TableHead>
-                      <TableHead className="text-right">Salário</TableHead>
+                      <TableHead>Salário</TableHead>
+                      <TableHead>Mensagem</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {colaboradores.slice(0, 100).map((colab, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">{colab.nome}</TableCell>
-                        <TableCell className="font-mono text-xs">{formatCPF(colab.cpf)}</TableCell>
+                    {colaboradores.slice(0, 200).map((colab, idx) => (
+                      <TableRow key={idx} className={colab.status === "erro" ? "bg-red-50/50" : ""}>
+                        <TableCell className="text-xs text-muted-foreground">{colab.linha}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-[10px] whitespace-nowrap">
-                            {colab.classificacao_salario}
-                          </Badge>
+                          {colab.status === "valido" ? (
+                            <Badge className="bg-green-500 hover:bg-green-600 text-[10px]">Válido</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Inválido
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="font-medium text-xs truncate max-w-[150px]" title={colab.nome}>
+                          {colab.nome}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {colab.status === "valido" ? formatCPF(colab.cpf) : colab.cpf}
+                        </TableCell>
+                        <TableCell className="text-xs">
                           {colab.salario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                         </TableCell>
+                        <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
-                    {colaboradores.length > 100 && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-4 text-xs">
-                          ... e mais {colaboradores.length - 100} colaboradores.
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -545,7 +625,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <div className="ml-3">
                     <p className="text-sm text-yellow-700">
                       Ao confirmar, este lote será criado com status <strong>CONCLUÍDO</strong> e estará pronto para
-                      faturamento. Certifique-se de que a lista está correta.
+                      faturamento.
                     </p>
                   </div>
                 </div>
@@ -563,7 +643,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 </Button>
                 <Button
                   onClick={handleConfirmarImportacao}
-                  disabled={loading}
+                  disabled={loading || totalValidos === 0}
                   className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                 >
                   {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="mr-2 h-4 w-4" />}
