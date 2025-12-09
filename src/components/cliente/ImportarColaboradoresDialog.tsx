@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import { useImportarColaboradores } from "@/hooks/useImportarColaboradores";
+import { findHeaderRowIndex, mapColumnIndexes, validateRequiredColumns } from "@/lib/excelImportUtils";
 import {
   Pagination,
   PaginationContent,
@@ -169,34 +170,17 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
-      // Normalização de cabeçalhos e validação (igual ao seu código original)
-      const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
-      const normalizeHeader = (h: string) =>
-        h
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[^a-z0-9]/g, "");
-      const normalizedHeaders = rawHeaders.map(normalizeHeader);
+      // 1. Encontrar a linha de cabeçalho (pula linhas em branco no topo)
+      const headerRowIndex = findHeaderRowIndex(jsonData);
+      const rawHeaders = jsonData[headerRowIndex].map((h: any) => String(h || "").trim());
 
-      const headerMapping: Record<string, string[]> = {
-        Nome: ["nome", "nomecompleto", "funcionario", "colaborador"],
-        Sexo: ["sexo", "genero", "gender"],
-        CPF: ["cpf", "documento", "doc"],
-        "Data Nascimento": ["datanascimento", "nascimento", "dtnasc", "datanasc", "dtnascimento"],
-        Salário: ["salario", "remuneracao", "vencimento", "salariobase"],
-      };
+      // 2. Mapear Índices das Colunas usando utilitário
+      const { idxNome, idxCPF, idxSalario, idxNasc, idxSexo } = mapColumnIndexes(rawHeaders);
 
-      const columnIndexes: Record<string, number> = {};
-      const missingColumns: string[] = [];
-      for (const [requiredCol, aliases] of Object.entries(headerMapping)) {
-        const foundIndex = normalizedHeaders.findIndex((h) => aliases.includes(h));
-        if (foundIndex === -1) missingColumns.push(requiredCol);
-        else columnIndexes[requiredCol] = foundIndex;
-      }
-
-      if (missingColumns.length > 0) {
-        toast.error(`Colunas obrigatórias não encontradas: ${missingColumns.join(", ")}.`);
+      // 3. Validar colunas obrigatórias
+      const missingCols = validateRequiredColumns({ idxNome, idxCPF, idxSalario, idxNasc, idxSexo });
+      if (missingCols.length > 0) {
+        toast.error(`Colunas obrigatórias não encontradas: ${missingCols.join(", ")}.`);
         setProcessing(false);
         return;
       }
@@ -212,35 +196,36 @@ export function ImportarColaboradoresDialog({
       const cpfsNoArquivo = new Set<string>();
       const validated: ValidatedRow[] = [];
 
-      // Processamento das linhas
-      for (let i = 1; i < jsonData.length; i++) {
+      // 4. Processamento das linhas (começa após o cabeçalho)
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        if (!row || row.length === 0 || row.every((cell: any) => !cell)) continue;
+        // Pula linhas vazias
+        if (!row || row.length === 0 || row.every((cell: any) => !cell || String(cell).trim() === "")) continue;
 
         const rowData = {
-          Nome: row[columnIndexes["Nome"]],
-          Sexo: row[columnIndexes["Sexo"]],
-          CPF: row[columnIndexes["CPF"]],
-          "Data Nascimento": row[columnIndexes["Data Nascimento"]],
-          Salário: row[columnIndexes["Salário"]],
+          nome: row[idxNome],
+          sexo: row[idxSexo],
+          cpf: row[idxCPF],
+          data_nascimento: row[idxNasc],
+          salario: row[idxSalario],
         };
 
         const erros: string[] = [];
         const linha = i + 1;
 
         // Validações
-        const nome = rowData["Nome"]?.toString().trim();
+        const nome = rowData.nome?.toString().trim();
         if (!nome) erros.push("Nome obrigatório");
-        const sexoNormalizado = normalizarSexo(rowData["Sexo"]);
+        const sexoNormalizado = normalizarSexo(rowData.sexo);
         if (!sexoNormalizado) erros.push("Sexo inválido");
-        const cpfRaw = rowData["CPF"]?.toString().replace(/\D/g, "");
+        const cpfRaw = rowData.cpf?.toString().replace(/\D/g, "");
         if (!cpfRaw || cpfRaw.length !== 11) erros.push("CPF deve ter 11 dígitos");
         else if (!validateCPF(cpfRaw)) erros.push("CPF inválido");
         else if (cpfsNoArquivo.has(cpfRaw)) erros.push("CPF duplicado");
         else cpfsNoArquivo.add(cpfRaw);
-        const dataNascimento = normalizarData(rowData["Data Nascimento"]);
+        const dataNascimento = normalizarData(rowData.data_nascimento);
         if (!dataNascimento) erros.push("Data inválida");
-        const salario = normalizarSalario(rowData["Salário"]);
+        const salario = normalizarSalario(rowData.salario);
         if (salario === null || salario < 0) erros.push("Salário inválido");
 
         let status: "novo" | "atualizado" | "erro" = "erro";
