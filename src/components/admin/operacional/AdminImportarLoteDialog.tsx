@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
+import { validateCPF, formatCPF } from "@/lib/validators";
 
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
@@ -25,6 +26,42 @@ const calcularClassificacao = (salario: number) => {
   if (salario < CLASSIFICACOES_SALARIO[0].minimo) return CLASSIFICACOES_SALARIO[0].label;
   const item = [...CLASSIFICACOES_SALARIO].reverse().find((c) => salario >= c.minimo);
   return item?.label || CLASSIFICACOES_SALARIO[0].label;
+};
+
+// Helpers de normalização (Robustez para o Excel)
+const normalizarSexo = (valor: any): string | null => {
+  if (!valor) return "M"; // Default
+  const str = String(valor).trim().toLowerCase();
+  if (["masculino", "masc", "m"].includes(str)) return "Masculino";
+  if (["feminino", "fem", "f"].includes(str)) return "Feminino";
+  return "Masculino";
+};
+
+const normalizarSalario = (valor: any): number => {
+  if (typeof valor === "number") return valor;
+  if (!valor) return 0;
+  // Remove R$, espaços e converte vírgula para ponto
+  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+};
+
+const normalizarData = (valor: any): string => {
+  if (!valor) return new Date().toISOString().split("T")[0]; // Fallback hoje
+
+  const str = String(valor).trim();
+  // DD/MM/AAAA
+  const ddmmyyyy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+
+  // Excel Serial Date
+  if (!isNaN(Number(valor))) {
+    const excelDate = XLSX.SSF.parse_date_code(Number(valor));
+    if (excelDate)
+      return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
+  }
+
+  return str; // Tenta retornar como está se for ISO
 };
 
 export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -124,40 +161,83 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
 
-      const validos = jsonData
-        .map((row: any) => {
-          const keys = Object.keys(row).reduce((acc, k) => ({ ...acc, [k.toLowerCase().trim()]: row[k] }), {} as any);
+      // Lê como Matriz de Matrizes (mais seguro para achar cabeçalhos)
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
-          const nome = keys["nome"] || keys["funcionario"] || keys["colaborador"];
-          const cpfRaw = keys["cpf"] || keys["documento"];
-          const salario = parseFloat(String(keys["salario"] || keys["vencimento"] || "0").replace(/[^\d.]/g, ""));
-          const nascimento = keys["data nascimento"] || keys["nascimento"];
+      if (jsonData.length < 2) {
+        toast.error("Arquivo vazio ou inválido.");
+        setLoading(false);
+        return;
+      }
 
-          if (!nome || !cpfRaw) return null;
+      // 1. Identificar Cabeçalhos (Normalizando texto)
+      const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
+      const normalizeHeader = (h: string) =>
+        h
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+          .replace(/[^a-z0-9]/g, ""); // Remove especiais
 
-          const cpfLimpo = String(cpfRaw).replace(/\D/g, "");
+      const headers = rawHeaders.map(normalizeHeader);
 
-          return {
-            nome: String(nome).toUpperCase(),
-            cpf: cpfLimpo,
-            sexo: keys["sexo"] ? String(keys["sexo"]).charAt(0).toUpperCase() : "M",
-            data_nascimento: nascimento,
-            salario: salario || 0,
-            classificacao_salario: calcularClassificacao(salario || 0),
-          };
-        })
-        .filter(Boolean);
+      // 2. Mapear Índices das Colunas
+      const mapIndex = (possibleNames: string[]) =>
+        headers.findIndex((h) => possibleNames.some((name) => h.includes(name)));
+
+      const idxNome = mapIndex(["nome", "funcionario", "colaborador"]);
+      const idxCPF = mapIndex(["cpf", "documento"]);
+      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao"]);
+      const idxNasc = mapIndex(["nascimento", "data", "dtnasc"]);
+      const idxSexo = mapIndex(["sexo", "genero"]);
+
+      if (idxNome === -1 || idxCPF === -1 || idxSalario === -1) {
+        toast.error("Não encontramos as colunas: Nome, CPF e Salário. Verifique o arquivo.");
+        setLoading(false);
+        return;
+      }
+
+      // 3. Processar Linhas
+      const validos = [];
+      // Começa do 1 para pular o cabeçalho
+      for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || row.length === 0) continue;
+
+        const nome = row[idxNome];
+        const cpfRaw = row[idxCPF];
+
+        // Pula linha se não tiver nome ou CPF
+        if (!nome || !cpfRaw) continue;
+
+        const salario = normalizarSalario(row[idxSalario]);
+        const cpfLimpo = String(cpfRaw).replace(/\D/g, "");
+
+        // Validação mínima de CPF
+        if (cpfLimpo.length !== 11) continue;
+
+        validos.push({
+          nome: String(nome).toUpperCase().trim(),
+          cpf: cpfLimpo,
+          sexo: normalizarSexo(row[idxSexo]),
+          data_nascimento: normalizarData(row[idxNasc]),
+          salario: salario,
+          classificacao_salario: calcularClassificacao(salario),
+        });
+      }
 
       if (validos.length === 0) {
-        toast.error("Nenhum colaborador válido encontrado na planilha.");
+        toast.error("Nenhum colaborador válido encontrado.");
+        setLoading(false);
         return;
       }
 
       setColaboradores(validos);
       setStep("conclusao");
+      toast.success(`${validos.length} colaboradores identificados!`);
     } catch (error) {
       console.error(error);
       toast.error("Erro ao ler arquivo.");
@@ -366,7 +446,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 </div>
               </div>
 
-              {/* TABELA DE PRÉ-VISUALIZAÇÃO (Igual ao Cliente) */}
+              {/* TABELA DE PRÉ-VISUALIZAÇÃO */}
               <div className="border rounded-lg max-h-[300px] overflow-y-auto">
                 <Table>
                   <TableHeader>
@@ -381,7 +461,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                     {colaboradores.slice(0, 100).map((colab, idx) => (
                       <TableRow key={idx}>
                         <TableCell className="font-medium">{colab.nome}</TableCell>
-                        <TableCell className="font-mono text-xs">{colab.cpf}</TableCell>
+                        <TableCell className="font-mono text-xs">{formatCPF(colab.cpf)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-[10px] whitespace-nowrap">
                             {colab.classificacao_salario}
