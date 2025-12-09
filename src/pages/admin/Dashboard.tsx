@@ -3,7 +3,19 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wallet, DollarSign, Users, PieChart as PieIcon, BarChart3, Filter } from "lucide-react";
+// CORREÇÃO: Adicionados todos os ícones que estavam faltando
+import {
+  Building2,
+  Wallet,
+  DollarSign,
+  Users,
+  PieChart as PieIcon,
+  BarChart3,
+  Filter,
+  TrendingUp,
+  Activity,
+  AlertTriangle,
+} from "lucide-react";
 import {
   ComposedChart,
   Line,
@@ -76,10 +88,12 @@ export default function Dashboard() {
 
       // B. Dados Detalhados dos Colaboradores (Para Gênero e Salário)
       // Buscamos apenas os campos necessários de TODOS os colaboradores vinculados aos lotes deste mês
-      const { data: colaboradoresDetalhados } = await supabase
-        .from("colaboradores_lote")
-        .select("sexo, salario")
-        .in("lote_id", lotesIds);
+      // Nota: Se não houver lotes, essa query retorna vazio, o que é correto.
+      let colaboradoresDetalhados: any[] = [];
+      if (lotesIds.length > 0) {
+        const { data } = await supabase.from("colaboradores_lote").select("sexo, salario").in("lote_id", lotesIds);
+        colaboradoresDetalhados = data || [];
+      }
 
       // C. Faturamento Realizado (Notas Fiscais do Mês)
       const { data: notasMes } = await supabase
@@ -96,7 +110,7 @@ export default function Dashboard() {
 
       return {
         lotesMes: lotesMes || [],
-        colaboradores: colaboradoresDetalhados || [],
+        colaboradores: colaboradoresDetalhados,
         notasMes: notasMes || [],
         historicoLotes: historicoLotes || [],
       };
@@ -127,7 +141,7 @@ export default function Dashboard() {
   const genderTotal = genderChartData.reduce((acc, curr) => acc + curr.value, 0);
   const genderChartDataWithPct = genderChartData.map((d) => ({
     ...d,
-    pct: ((d.value / genderTotal) * 100).toFixed(1) + "%",
+    pct: genderTotal > 0 ? ((d.value / genderTotal) * 100).toFixed(1) + "%" : "0%",
   }));
 
   // 3. Gráfico de Faixa Salarial (Barras)
@@ -152,20 +166,18 @@ export default function Dashboard() {
   }));
 
   // 4. Gráfico Evolução (Mantido do anterior)
-  const evolutionChartData =
-    dashboardData?.historicoLotes
-      ?.reduce((acc: any[], curr) => {
-        const existing = acc.find((item) => item.name === curr.competencia);
-        const valor = Number(curr.valor_total) || Number(curr.total_colaboradores) * 50;
-        if (existing) {
-          existing.vidas += curr.total_colaboradores || 0;
-          existing.faturamento += valor;
-        } else {
-          acc.push({ name: curr.competencia, vidas: curr.total_colaboradores || 0, faturamento: valor });
-        }
-        return acc;
-      }, [])
-      .slice(-6) || [];
+  // Agrupa por competência para somar valores se houver múltiplos lotes no mesmo mês
+  const evolutionMap = dashboardData?.historicoLotes?.reduce((acc: any, curr) => {
+    if (!acc[curr.competencia]) {
+      acc[curr.competencia] = { name: curr.competencia, vidas: 0, faturamento: 0 };
+    }
+    const valor = Number(curr.valor_total) || Number(curr.total_colaboradores) * 50;
+    acc[curr.competencia].vidas += curr.total_colaboradores || 0;
+    acc[curr.competencia].faturamento += valor;
+    return acc;
+  }, {});
+
+  const evolutionChartData = Object.values(evolutionMap || {}).slice(-6) as any[];
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -197,7 +209,7 @@ export default function Dashboard() {
 
       {/* KPI CARDS (DADOS DO MÊS SELECIONADO) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* Card Novo: Empresas que Enviaram */}
+        {/* Empresas que Enviaram */}
         <KpiCard
           title="Empresas no Mês"
           value={totalEmpresasNoMes}
