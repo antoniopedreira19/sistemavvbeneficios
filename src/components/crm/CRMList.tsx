@@ -31,31 +31,38 @@ import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
 const ITEMS_PER_PAGE = 50;
 
-// Definindo o tipo para o filtro de contrato
 type ContratoFilterType = "todos" | "sim" | "nao";
+
+// Função para formatar Nome (Primeira letra maiúscula)
+const toTitleCase = (str: string) => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
 
 export function CRMList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [contratoFilter, setContratoFilter] = useState<ContratoFilterType>("todos");
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null); // Para detalhes
-  const [empresaParaEditar, setEmpresaParaEditar] = useState<EmpresaCRM | null>(null); // Para editar direto
+  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaCRM | null>(null);
+  const [empresaParaEditar, setEmpresaParaEditar] = useState<EmpresaCRM | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
   const queryClient = useQueryClient();
 
-  // Realtime subscription for empresas
   useRealtimeSubscription({
-    table: 'empresas',
-    queryKeys: ['empresas-ativas', 'empresas-inativas', 'crm-empresas'],
+    table: "empresas",
+    queryKeys: ["empresas-ativas", "empresas-inativas", "crm-empresas"],
   });
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-ativas"],
     queryFn: async () => {
       const { data, error } = await supabase.from("empresas").select("*").eq("status", "ativa").order("nome");
-
       if (error) throw error;
       return (data || []) as EmpresaCRM[];
     },
@@ -88,25 +95,16 @@ export function CRMList() {
     setDetailDialogOpen(true);
   };
 
-  // --- FILTRAGEM COMBINADA (Busca + Contrato) ---
   const filteredEmpresas =
     empresas?.filter((empresa) => {
-      // 1. Filtro de Texto (Nome ou CNPJ)
       const matchesSearch =
         empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm);
-
-      // 2. Filtro de Contrato
       let matchesContrato = true;
-      if (contratoFilter === "sim") {
-        matchesContrato = !!empresa.contrato_url; // Tem contrato
-      } else if (contratoFilter === "nao") {
-        matchesContrato = !empresa.contrato_url; // Não tem contrato
-      }
-
+      if (contratoFilter === "sim") matchesContrato = !!empresa.contrato_url;
+      else if (contratoFilter === "nao") matchesContrato = !empresa.contrato_url;
       return matchesSearch && matchesContrato;
     }) || [];
 
-  // Lógica de Paginação
   const totalPages = Math.ceil(filteredEmpresas.length / ITEMS_PER_PAGE);
   const paginatedEmpresas = filteredEmpresas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
@@ -134,7 +132,6 @@ export function CRMList() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-              {/* FILTRO DE CONTRATO */}
               <div className="w-full sm:w-[180px]">
                 <Select
                   value={contratoFilter}
@@ -157,7 +154,6 @@ export function CRMList() {
                 </Select>
               </div>
 
-              {/* BARRA DE BUSCA */}
               <div className="relative w-full sm:w-72">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -201,7 +197,6 @@ export function CRMList() {
                     >
                       <TableCell>
                         <div className="flex flex-col max-w-[280px]">
-                          {/* NOME EM MAIÚSCULO AQUI */}
                           <span className="font-medium text-base truncate" title={empresa.nome}>
                             {empresa.nome.toUpperCase()}
                           </span>
@@ -210,7 +205,11 @@ export function CRMList() {
                       </TableCell>
                       <TableCell>
                         <div className="truncate max-w-[180px]" title={empresa.nome_responsavel || ""}>
-                          {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
+                          {empresa.nome_responsavel ? (
+                            toTitleCase(empresa.nome_responsavel)
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -220,7 +219,7 @@ export function CRMList() {
                               className="flex items-center gap-1 text-muted-foreground truncate"
                               title={empresa.email_contato}
                             >
-                              <Mail className="h-3 w-3 shrink-0" />{" "}
+                              <Mail className="h-3 w-3 shrink-0" />
                               <span className="truncate">{empresa.email_contato}</span>
                             </div>
                           )}
@@ -231,8 +230,6 @@ export function CRMList() {
                           )}
                         </div>
                       </TableCell>
-
-                      {/* COLUNA STATUS COM BADGE DE CONTRATO */}
                       <TableCell className="text-center">
                         <div className="flex flex-col items-center gap-1.5">
                           <Badge
@@ -251,7 +248,6 @@ export function CRMList() {
                           )}
                         </div>
                       </TableCell>
-
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -315,7 +311,6 @@ export function CRMList() {
         </CardContent>
       </Card>
 
-      {/* MODAL DE DETALHES (Read-only + Ações rápidas) */}
       <EmpresaDetailDialog
         empresa={selectedEmpresa}
         open={detailDialogOpen}
@@ -325,7 +320,6 @@ export function CRMList() {
         onEmpresaUpdated={() => queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] })}
       />
 
-      {/* MODAL DE EDIÇÃO COMPLETA (inclui upload de contrato) */}
       {empresaParaEditar && (
         <EditarEmpresaDialog
           open={!!empresaParaEditar}
