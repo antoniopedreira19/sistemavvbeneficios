@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateCPF, formatCPF } from "@/lib/validators";
+import { findHeaderRowIndex, mapColumnIndexes, validateRequiredColumns } from "@/lib/excelImportUtils";
 
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
@@ -173,40 +174,27 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // 1. Identificar Cabeçalhos (Normalizando texto)
-      const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
-      const normalizeHeader = (h: string) =>
-        h
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-          .replace(/[^a-z0-9]/g, ""); // Remove especiais
+      // 1. Encontrar a linha de cabeçalho (pula linhas em branco no topo)
+      const headerRowIndex = findHeaderRowIndex(jsonData);
+      const rawHeaders = jsonData[headerRowIndex].map((h: any) => String(h || "").trim());
 
-      const headers = rawHeaders.map(normalizeHeader);
+      // 2. Mapear Índices das Colunas usando utilitário
+      const { idxNome, idxCPF, idxSalario, idxNasc, idxSexo } = mapColumnIndexes(rawHeaders);
 
-      // 2. Mapear Índices das Colunas (com múltiplas variações)
-      const mapIndex = (possibleNames: string[]) =>
-        headers.findIndex((h) => possibleNames.some((name) => h.includes(name) || name.includes(h)));
-
-      // Variações amplas para cada coluna
-      const idxNome = mapIndex(["nome", "funcionario", "colaborador", "empregado", "trabalhador", "nomecolaborador", "nomefuncionario", "nometrabalhador"]);
-      const idxCPF = mapIndex(["cpf", "documento", "doc", "cpfcnpj", "numcpf"]);
-      const idxSalario = mapIndex(["salario", "vencimento", "remuneracao", "sal", "renda", "valor", "pagamento", "vencimentos"]);
-      const idxNasc = mapIndex(["nascimento", "nasc", "dtnasc", "dtnascimento", "datanasc", "datanascimento", "datadenasc", "datadenascimento", "dtdenascimento"]);
-      const idxSexo = mapIndex(["sexo", "genero", "gen", "sx", "masculinofeminino"]);
-
-      if (idxNome === -1 || idxCPF === -1 || idxSalario === -1) {
-        toast.error("Não encontramos as colunas: Nome, CPF e Salário. Verifique o arquivo.");
+      // 3. Validar colunas obrigatórias
+      const missingColumns = validateRequiredColumns({ idxNome, idxCPF, idxSalario, idxNasc, idxSexo });
+      if (missingColumns.length > 0) {
+        toast.error(`Colunas não encontradas: ${missingColumns.join(", ")}. Verifique o arquivo.`);
         setLoading(false);
         return;
       }
 
-      // 3. Processar Linhas
+      // 4. Processar Linhas (começa após o cabeçalho)
       const validos = [];
-      // Começa do 1 para pular o cabeçalho
-      for (let i = 1; i < jsonData.length; i++) {
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        if (!row || row.length === 0) continue;
+        // Pula linhas vazias
+        if (!row || row.length === 0 || row.every((cell: any) => !cell || String(cell).trim() === "")) continue;
 
         const nome = row[idxNome];
         const cpfRaw = row[idxCPF];
