@@ -29,6 +29,7 @@ import * as XLSX from "xlsx";
 import { validateCPF, formatCPF } from "@/lib/validators";
 import { cn } from "@/lib/utils";
 
+// --- CONSTANTES ---
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
   { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.2 },
@@ -44,7 +45,7 @@ const calcularClassificacao = (salario: number) => {
   return item?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
-// Helpers de normalização
+// --- HELPERS DE NORMALIZAÇÃO ---
 const normalizarHeader = (h: string) =>
   h
     .toLowerCase()
@@ -140,7 +141,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   useEffect(() => {
     if (selectedEmpresa) {
-      setLoading(true);
       supabase
         .from("obras")
         .select("id, nome")
@@ -148,7 +148,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         .eq("status", "ativa")
         .then(({ data }) => {
           setObras(data || []);
-          setLoading(false);
         });
     } else {
       setObras([]);
@@ -183,7 +182,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     },
   });
 
-  // --- LEITURA DO ARQUIVO (Apenas Memória) ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -193,15 +191,14 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
 
-      // Lógica de busca de aba (já corrigida para achar "Relação de Vidas" etc)
       let targetSheetName = "";
       let jsonData: any[][] = [];
 
+      // Procura inteligente da aba
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         if (tempJson.length > 0) {
-          // Verifica várias linhas iniciais caso tenha cabeçalho vazio
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
             const row = tempJson[i];
             const rawHeaders = row.map((h: any) => String(h || "").trim());
@@ -211,7 +208,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
             if (hasNome && hasCPF) {
               targetSheetName = sheetName;
-              // Remove as linhas acima do cabeçalho para processamento
               jsonData = tempJson.slice(i);
               break;
             }
@@ -221,7 +217,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       }
 
       if (!targetSheetName) {
-        toast.error("Colunas 'Nome' e 'CPF' não encontradas em nenhuma aba.");
+        toast.error("Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba.");
         setLoading(false);
         return;
       }
@@ -240,7 +236,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       const processados: ValidatedRow[] = [];
       const cpfsVistos = new Set<string>();
 
-      // Começa da linha 1 (pós-cabeçalho)
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0) continue;
@@ -253,12 +248,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const erros: string[] = [];
 
         if (!nome) erros.push("Nome ausente");
-        if (cpfLimpo.length !== 11) erros.push("CPF tamanho inválido");
+        if (cpfLimpo.length !== 11) erros.push("CPF inválido");
         else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido");
 
-        if (cpfsVistos.has(cpfLimpo)) {
-          erros.push("Duplicado na planilha");
-        }
+        if (cpfsVistos.has(cpfLimpo)) erros.push("Duplicado");
         if (cpfLimpo) cpfsVistos.add(cpfLimpo);
 
         processados.push({
@@ -291,74 +284,72 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
-  // --- CONFIRMAÇÃO FINAL (Único momento que toca no Banco) ---
+  // --- CONFIRMAÇÃO BLINDADA ---
   const handleConfirmarImportacao = async () => {
     const validos = colaboradores.filter((c) => c.status === "valido");
     if (!selectedEmpresa || !selectedObra || validos.length === 0) return;
 
     setLoading(true);
-    try {
-      // 1. Verificar se JÁ EXISTE Lote para esta competência (Idempotência)
-      let loteId = "";
+    let loteIdCriado: string | null = null; // Para rollback se necessário
 
+    try {
+      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
+
+      // 1. INÍCIO: Criar (ou buscar) Lote com status PROVISÓRIO
+      // Usamos 'aguardando_processamento' para o trigger NÃO disparar ainda
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
         .select("id")
         .eq("empresa_id", selectedEmpresa)
         .eq("obra_id", selectedObra)
         .eq("competencia", competencia)
-        .maybeSingle(); // Retorna null se não achar, em vez de erro
-
-      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
+        .maybeSingle();
 
       if (loteExistente) {
-        // MODO ATUALIZAÇÃO: Se já existe, atualizamos o lote e limpamos itens antigos
-        loteId = loteExistente.id;
-        console.log("Atualizando lote existente:", loteId);
+        loteIdCriado = loteExistente.id;
+        console.log("Atualizando lote existente:", loteIdCriado);
 
+        // Reseta o lote para um estado seguro antes de mexer
         await supabase
           .from("lotes_mensais")
           .update({
-            status: "concluido",
+            status: "aguardando_processamento", // Status seguro
             total_colaboradores: validos.length,
-            total_aprovados: validos.length,
+            total_aprovados: 0,
             total_reprovados: 0,
             valor_total: valorTotal,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", loteId);
+          .eq("id", loteIdCriado);
 
-        // Limpa itens antigos para evitar duplicação ou conflito
-        await supabase.from("colaboradores_lote").delete().eq("lote_id", loteId);
+        await supabase.from("colaboradores_lote").delete().eq("lote_id", loteIdCriado);
       } else {
-        // MODO CRIAÇÃO: Cria lote novo
         const { data: novoLote, error: createError } = await supabase
           .from("lotes_mensais")
           .insert({
             empresa_id: selectedEmpresa,
             obra_id: selectedObra,
             competencia: competencia,
-            status: "concluido",
+            status: "aguardando_processamento", // IMPORTANTE: Não use 'concluido' ainda
             total_colaboradores: validos.length,
-            total_aprovados: validos.length,
+            total_aprovados: 0,
             total_reprovados: 0,
             valor_total: valorTotal,
             enviado_seguradora_em: new Date().toISOString(),
-            aprovado_em: new Date().toISOString(),
           })
           .select()
           .single();
 
         if (createError) throw createError;
-        loteId = novoLote.id;
+        loteIdCriado = novoLote.id;
       }
 
-      // 2. Processar Itens em Lote
+      // 2. MEIO: Inserir Colaboradores (Base Mestra + Vínculo)
       const BATCH_SIZE = 100;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
 
-        // A. Upsert Mestra (Colaboradores)
+        // A. Upsert Mestra
         const mestraData = batch.map((c) => ({
           empresa_id: selectedEmpresa,
           obra_id: selectedObra,
@@ -376,14 +367,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
           .select("id, cpf");
 
-        if (upsertError) throw new Error(`Erro ao atualizar cadastro: ${upsertError.message}`);
+        if (upsertError) throw new Error(`Erro ao salvar na base mestra: ${upsertError.message}`);
 
-        // Mapeia CPF -> ID gerado
         const cpfToIdMap = new Map(upsertedCols?.map((c) => [c.cpf, c.id]));
 
-        // B. Insert Histórico (Itens do Lote)
+        // B. Insert Lote (Já aprovados)
         const loteItemsData = batch.map((c) => ({
-          lote_id: loteId,
+          lote_id: loteIdCriado,
           colaborador_id: cpfToIdMap.get(c.cpf),
           nome: c.nome,
           cpf: c.cpf,
@@ -391,7 +381,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           data_nascimento: c.data_nascimento,
           salario: c.salario,
           classificacao_salario: c.classificacao_salario,
-          status_seguradora: "aprovado",
+          status_seguradora: "aprovado", // Entra como aprovado
         }));
 
         const { error: itemsError } = await supabase.from("colaboradores_lote").insert(loteItemsData);
@@ -399,7 +389,20 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      toast.success("Sucesso! Lote finalizado.");
+      // 3. FIM: Tudo certo? Agora sim, marcamos como CONCLUÍDO
+      // Isso vai disparar os gatilhos de faturamento com segurança
+      const { error: finalError } = await supabase
+        .from("lotes_mensais")
+        .update({
+          status: "concluido",
+          total_aprovados: validos.length,
+          aprovado_em: new Date().toISOString(),
+        })
+        .eq("id", loteIdCriado);
+
+      if (finalError) throw finalError;
+
+      toast.success("Sucesso! Lote importado e finalizado.");
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
 
@@ -411,6 +414,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     } catch (error: any) {
       console.error(error);
       toast.error("Erro no processo: " + error.message);
+
+      // Rollback manual simples: Se deu erro e criamos um lote, apagamos ele para não ficar lixo
+      // (Opcional, mas recomendado para evitar "Lote vazio")
+      if (loteIdCriado) {
+        console.log("Fazendo rollback do lote...", loteIdCriado);
+        await supabase.from("lotes_mensais").delete().eq("id", loteIdCriado);
+      }
     } finally {
       setLoading(false);
     }
@@ -425,7 +435,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
           <DialogDescription>
-            Importe uma lista já aprovada. O lote será criado apenas ao clicar em "Confirmar".
+            Importe uma lista já aprovada. O lote será criado e finalizado ao clicar em "Confirmar".
           </DialogDescription>
         </DialogHeader>
 
@@ -613,22 +623,15 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
+                    {colaboradores.length > 200 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 200} linhas.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
-              </div>
-
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <AlertTriangle className="h-5 w-5 text-yellow-400" aria-hidden="true" />
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-yellow-700">
-                      Ao confirmar, este lote será criado com status <strong>CONCLUÍDO</strong> e estará pronto para
-                      faturamento.
-                    </p>
-                  </div>
-                </div>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
