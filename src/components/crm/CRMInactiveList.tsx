@@ -29,6 +29,16 @@ import { useRealtimeSubscription } from "@/hooks/useRealtimeSubscription";
 
 const ITEMS_PER_PAGE = 50;
 
+// Função para formatar Nome
+const toTitleCase = (str: string) => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
 export function CRMInactiveList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,18 +46,15 @@ export function CRMInactiveList() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  // Realtime subscription for empresas
   useRealtimeSubscription({
-    table: 'empresas',
-    queryKeys: ['empresas-ativas', 'empresas-inativas', 'crm-empresas'],
+    table: "empresas",
+    queryKeys: ["empresas-ativas", "empresas-inativas", "crm-empresas"],
   });
 
   const { data: empresas, isLoading } = useQuery({
     queryKey: ["empresas-inativas"],
     queryFn: async () => {
-      // Mostra todas empresas que NÃO são ativas
       const { data, error } = await supabase.from("empresas").select("*").neq("status", "ativa").order("nome");
-
       if (error) throw error;
       return (data || []) as EmpresaCRM[];
     },
@@ -77,13 +84,11 @@ export function CRMInactiveList() {
     queryClient.invalidateQueries({ queryKey: ["empresas-inativas"] });
   };
 
-  // Filtragem
   const filteredEmpresas =
     empresas?.filter(
       (empresa) => empresa.nome.toLowerCase().includes(searchTerm.toLowerCase()) || empresa.cnpj.includes(searchTerm),
     ) || [];
 
-  // Lógica de Paginação
   const totalPages = Math.ceil(filteredEmpresas.length / ITEMS_PER_PAGE);
   const paginatedEmpresas = filteredEmpresas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
@@ -149,12 +154,16 @@ export function CRMInactiveList() {
                   >
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-medium text-base">{empresa.nome}</span>
+                        <span className="font-medium text-base">{empresa.nome.toUpperCase()}</span>
                         <span className="text-xs text-muted-foreground font-mono">{empresa.cnpj}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {empresa.nome_responsavel || <span className="text-muted-foreground">-</span>}
+                      {empresa.nome_responsavel ? (
+                        toTitleCase(empresa.nome_responsavel)
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1 text-sm max-w-[200px]">
@@ -254,7 +263,6 @@ export function CRMInactiveList() {
   );
 }
 
-// Helper para colorir os badges conforme o status
 function StatusBadge({ status }: { status: string }) {
   const STATUS_COLORS: Record<string, string> = {
     sem_retorno: "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200",
