@@ -12,6 +12,7 @@ import {
   BarChart3,
   Filter,
   TrendingUp,
+  Trophy, // Ícone para o Top 5
   Activity,
   CheckCircle2,
 } from "lucide-react";
@@ -35,13 +36,14 @@ import { ptBR } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Cores para gráficos
-const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"]; // Azul (M), Laranja (F), Outro
+const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"];
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
+const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"]; // Tons de verde
 
 export default function Dashboard() {
   const [selectedCompetencia, setSelectedCompetencia] = useState<string>("");
 
-  // 1. BUSCAR LISTA DE COMPETÊNCIAS (Para o Filtro)
+  // 1. BUSCAR LISTA DE COMPETÊNCIAS
   const { data: competencias = [] } = useQuery({
     queryKey: ["dashboard-competencias-list"],
     queryFn: async () => {
@@ -69,12 +71,10 @@ export default function Dashboard() {
 
   // 2. QUERY PRINCIPAL
   const { data: dashboardData, isLoading } = useQuery({
-    queryKey: ["admin-dashboard-stats-v4", selectedCompetencia],
+    queryKey: ["admin-dashboard-stats-v5", selectedCompetencia],
     enabled: !!selectedCompetencia,
     queryFn: async () => {
       console.log("Buscando dados para:", selectedCompetencia);
-
-      // --- DADOS GLOBAIS (SISTEMA) ---
 
       // A. Empresas Ativas (Total na Carteira)
       const { count: empresasAtivas } = await supabase
@@ -90,17 +90,25 @@ export default function Dashboard() {
 
       const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
 
-      // --- DADOS DA COMPETÊNCIA (FILTRO) ---
-
-      // C. Lotes do Mês Selecionado
+      // C. Lotes do Mês Selecionado (COM JOIN DA EMPRESA para o Top 5)
       const { data: lotesMes } = await supabase
         .from("lotes_mensais")
-        .select("id, empresa_id, status, total_colaboradores, valor_total, total_aprovados")
+        .select(
+          `
+          id, 
+          empresa_id, 
+          status, 
+          total_colaboradores, 
+          valor_total, 
+          total_aprovados,
+          empresa:empresas(nome) 
+        `,
+        )
         .eq("competencia", selectedCompetencia);
 
       const lotesIds = lotesMes?.map((l) => l.id) || [];
 
-      // D. Dados Detalhados (Para gráficos)
+      // D. Dados Detalhados
       let colaboradoresDetalhados: any[] = [];
       if (lotesIds.length > 0) {
         const { data } = await supabase.from("colaboradores_lote").select("sexo, salario").in("lote_id", lotesIds);
@@ -114,7 +122,7 @@ export default function Dashboard() {
         .eq("competencia", selectedCompetencia)
         .eq("nf_emitida", true);
 
-      // F. Histórico (Para gráfico de evolução)
+      // F. Histórico
       const { data: historicoLotes } = await supabase
         .from("lotes_mensais")
         .select("competencia, total_colaboradores, valor_total, created_at")
@@ -192,6 +200,21 @@ export default function Dashboard() {
 
   const evolutionChartData = Object.values(evolutionMap || {}).slice(-6) as any[];
 
+  // --- NOVO GRÁFICO: TOP 5 FATURAMENTO ---
+  // Agrupar lotes por empresa e somar valor
+  const revenueByCompany: Record<string, number> = {};
+  dashboardData?.lotesMes.forEach((lote: any) => {
+    const nome = lote.empresa?.nome || "Desconhecida";
+    // Se não tiver valor_total salvo, estima (vidas * 50)
+    const valor = Number(lote.valor_total) || Number(lote.total_colaboradores || 0) * 50;
+    revenueByCompany[nome] = (revenueByCompany[nome] || 0) + valor;
+  });
+
+  const top5Revenue = Object.entries(revenueByCompany)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
+
   if (isLoading) return <DashboardSkeleton />;
 
   return (
@@ -220,9 +243,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI CARDS - GRID DE 5 (RESPONSIVO) */}
+      {/* KPI CARDS - NOVA ORDEM */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {/* 1. GERAL: Empresas Ativas */}
+        {/* 1. Empresas Ativas (Global) */}
         <KpiCard
           title="Empresas Ativas"
           value={dashboardData?.empresasAtivas}
@@ -230,16 +253,7 @@ export default function Dashboard() {
           description="Total na carteira"
         />
 
-        {/* 2. GERAL: Faturamento Esperado */}
-        <KpiCard
-          title="Faturamento Esperado"
-          value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
-          icon={Wallet}
-          description="Potencial (Vidas Totais)"
-          iconColor="text-blue-600"
-        />
-
-        {/* 3. MÊS: Empresas que Enviaram */}
+        {/* 2. Empresas no Mês */}
         <KpiCard
           title="Empresas no Mês"
           value={totalEmpresasNoMes}
@@ -248,7 +262,7 @@ export default function Dashboard() {
           iconColor="text-purple-600"
         />
 
-        {/* 4. MÊS: Vidas Processadas */}
+        {/* 3. Vidas no Mês */}
         <KpiCard
           title="Vidas no Mês"
           value={totalVidasMes}
@@ -257,7 +271,16 @@ export default function Dashboard() {
           iconColor="text-orange-600"
         />
 
-        {/* 5. MÊS: Faturamento Realizado */}
+        {/* 4. Faturamento Esperado (Global) */}
+        <KpiCard
+          title="Faturamento Esperado"
+          value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
+          icon={Wallet}
+          description="Potencial (Vidas Totais)"
+          iconColor="text-blue-600"
+        />
+
+        {/* 5. Faturamento Real (Mês) */}
         <KpiCard
           title="Faturamento Real"
           value={`R$ ${faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
@@ -268,9 +291,105 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* GRÁFICOS DETALHADOS */}
+      {/* --- LINHA 1 DE GRÁFICOS: EVOLUÇÃO + TOP 5 --- */}
+      <div className="grid gap-4 md:grid-cols-7">
+        {/* Gráfico Evolução (4 colunas) */}
+        <Card className="col-span-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Evolução Financeira & Vidas
+            </CardTitle>
+            <CardDescription>Últimos 6 meses</CardDescription>
+          </CardHeader>
+          <CardContent className="pl-0">
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={evolutionChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis
+                    yAxisId="left"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `R$${val / 1000}k`}
+                  />
+                  <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="faturamento"
+                    name="Faturamento"
+                    fill="#82ca9d"
+                    barSize={30}
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="vidas"
+                    name="Vidas"
+                    stroke="#8884d8"
+                    strokeWidth={3}
+                    dot={{ r: 4 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* NOVO: Top 5 Faturamento (3 colunas) */}
+        <Card className="col-span-3">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Trophy className="h-5 w-5 text-yellow-500" />
+              Top 5 Faturamento
+            </CardTitle>
+            <CardDescription>Maiores empresas em {selectedCompetencia}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] w-full">
+              {top5Revenue.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={top5Revenue} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" hide />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      width={100}
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(val) => (val.length > 15 ? val.slice(0, 15) + "..." : val)}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "transparent" }}
+                      formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR")}`, "Faturamento"]}
+                    />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={25}>
+                      {top5Revenue.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS_TOP5[index % COLORS_TOP5.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                  Sem dados financeiros.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* --- LINHA 2 DE GRÁFICOS: GÊNERO + SALÁRIO --- */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* GÊNERO */}
+        {/* GRÁFICO DE GÊNERO */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -302,13 +421,13 @@ export default function Dashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-muted-foreground text-sm">Sem dados para este mês.</div>
+                <div className="text-muted-foreground text-sm">Sem dados de gênero.</div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* FAIXA SALARIAL */}
+        {/* GRÁFICO DE FAIXA SALARIAL */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -351,54 +470,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* GRÁFICO DE EVOLUÇÃO */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            Histórico de Evolução (Geral)
-          </CardTitle>
-          <CardDescription>Comparativo dos últimos 6 meses</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={evolutionChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis
-                  yAxisId="left"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `R$${val / 1000}k`}
-                />
-                <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  yAxisId="left"
-                  dataKey="faturamento"
-                  name="Faturamento"
-                  fill="#82ca9d"
-                  barSize={30}
-                  radius={[4, 4, 0, 0]}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="vidas"
-                  name="Vidas"
-                  stroke="#8884d8"
-                  strokeWidth={3}
-                  dot={{ r: 4 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -440,9 +511,9 @@ function DashboardSkeleton() {
         <Skeleton className="h-32" />
         <Skeleton className="h-32" />
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Skeleton className="h-80" />
-        <Skeleton className="h-80" />
+      <div className="grid gap-4 md:grid-cols-7">
+        <Skeleton className="col-span-4 h-80" />
+        <Skeleton className="col-span-3 h-80" />
       </div>
     </div>
   );
