@@ -82,13 +82,7 @@ export default function Dashboard() {
         .select("*", { count: "exact", head: true })
         .eq("status", "ativa");
 
-      // B. Vidas Ativas Totais (Para Faturamento Esperado)
-      const { count: totalVidasAtivas } = await supabase
-        .from("colaboradores")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "ativo");
-
-      const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
+      // B. Lotes do Mês Selecionado (COM JOIN DA EMPRESA para o Top 5)
 
       // C. Lotes do Mês Selecionado (COM JOIN DA EMPRESA para o Top 5)
       const { data: lotesMes } = await supabase
@@ -128,10 +122,13 @@ export default function Dashboard() {
         .select("competencia, total_colaboradores, valor_total, created_at")
         .order("created_at", { ascending: true });
 
+      // Calcular faturamento esperado baseado nos lotes do mês
+      const totalVidasMesCalc = (lotesMes || []).reduce((acc, l) => acc + (l.total_colaboradores || 0), 0);
+      const faturamentoEsperado = totalVidasMesCalc * 50;
+
       return {
         empresasAtivas: empresasAtivas || 0,
         faturamentoEsperado,
-        totalVidasAtivas: totalVidasAtivas || 0,
         lotesMes: lotesMes || [],
         colaboradores: colaboradoresDetalhados,
         notasMes: notasMes || [],
