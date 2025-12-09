@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2, Inbox } from "lucide-react";
+import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2, Inbox, Upload } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,8 +16,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
+import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -39,6 +41,7 @@ export default function Operacional() {
   const [confirmEnviarDialog, setConfirmEnviarDialog] = useState(false);
   const [confirmFaturarDialog, setConfirmFaturarDialog] = useState(false);
   const [processarDialogOpen, setProcessarDialogOpen] = useState(false);
+  const [importarDialogOpen, setImportarDialogOpen] = useState(false); // NOVO
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // --- QUERY INTELIGENTE ---
@@ -133,13 +136,10 @@ export default function Operacional() {
     },
   });
 
-  // CORREÇÃO AQUI: Faturar agora calcula o valor para garantir que não vá NULL
   const faturarMutation = useMutation({
     mutationFn: async (lote: LoteOperacional) => {
       setActionLoading(lote.id);
 
-      // Cálculo de segurança: Se valor_total vier null, calculamos agora.
-      // (Vidas totais - Reprovados) * 50
       const vidasAprovadas = (lote.total_colaboradores || 0) - (lote.total_reprovados || 0);
       const valorCalculado = vidasAprovadas * 50;
 
@@ -147,7 +147,7 @@ export default function Operacional() {
         .from("lotes_mensais")
         .update({
           status: "faturado",
-          valor_total: valorCalculado, // <--- ISSO SALVA O GATILHO
+          valor_total: valorCalculado,
         })
         .eq("id", lote.id);
 
@@ -194,7 +194,6 @@ export default function Operacional() {
     }
   };
 
-  // Helper de Paginação
   const getPaginatedLotes = (tab: TabType) => {
     const data = getLotesByTab(tab);
     const page = pages[tab] || 1;
@@ -206,12 +205,20 @@ export default function Operacional() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Building2 className="h-8 w-8 text-primary" />
-        <div>
-          <h1 className="text-3xl font-bold">Operacional</h1>
-          <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Building2 className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-3xl font-bold">Operacional</h1>
+            <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
+          </div>
         </div>
+
+        {/* BOTÃO DE IMPORTAÇÃO (NOVO) */}
+        <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
+          <Upload className="mr-2 h-4 w-4" />
+          Importar Lote Pronto
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
@@ -303,7 +310,7 @@ export default function Operacional() {
         )}
       </Tabs>
 
-      {/* DIALOG DE CONFIRMAÇÃO DE ENVIO */}
+      {/* DIALOGS */}
       <AlertDialog open={confirmEnviarDialog} onOpenChange={setConfirmEnviarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -312,7 +319,7 @@ export default function Operacional() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedLote?.status === "aguardando_reanalise"
-                ? "O lote corrigido será enviado para seguradora."
+                ? "O lote corrigido será enviado para a fila de 'Em Reanálise'."
                 : "O lote será enviado para análise inicial da seguradora."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -323,7 +330,6 @@ export default function Operacional() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* DIALOG DE FATURAMENTO (Agora com cálculo automático) */}
       <AlertDialog open={confirmFaturarDialog} onOpenChange={setConfirmFaturarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -343,6 +349,9 @@ export default function Operacional() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* MODAL IMPORTAR LOTE (NOVO) */}
+      <AdminImportarLoteDialog open={importarDialogOpen} onOpenChange={setImportarDialogOpen} />
 
       {selectedLote && (
         <ProcessarRetornoDialog
