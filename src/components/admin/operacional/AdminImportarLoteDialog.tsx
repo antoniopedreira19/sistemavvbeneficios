@@ -179,7 +179,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           data_nascimento: c.data_nascimento, // Cuidado com formato de data aqui
           salario: c.salario,
           classificacao_salario: c.classificacao_salario,
-          status: 'ativo'
+          status: 'ativo' as const
         }));
         
         // Nota: Upsert requer constraint unica no CPF ou ID. Se CPF for unico globalmente ok.
