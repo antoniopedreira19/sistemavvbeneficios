@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building } from "lucide-react";
 import * as XLSX from "xlsx";
 
-// Reutilizando constantes de salário
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
   { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.2 },
@@ -33,7 +32,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"selecao" | "upload" | "conclusao">("selecao");
 
-  // Dados do Formulário
   const [empresas, setEmpresas] = useState<{ id: string; nome: string }[]>([]);
   const [obras, setObras] = useState<{ id: string; nome: string }[]>([]);
 
@@ -41,7 +39,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [selectedObra, setSelectedObra] = useState("");
   const [competencia, setCompetencia] = useState("");
 
-  // Dados do Arquivo
   const [colaboradores, setColaboradores] = useState<any[]>([]);
 
   // Carregar Empresas Ativas
@@ -91,7 +88,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   }, [selectedEmpresa]);
 
-  // --- NOVA FUNCIONALIDADE: CRIAR OBRA AUTOMÁTICA ---
+  // Criar Obra Automática
   const createObraMutation = useMutation({
     mutationFn: async () => {
       const empresa = empresas.find((e) => e.id === selectedEmpresa);
@@ -100,7 +97,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       const { data, error } = await supabase
         .from("obras")
         .insert({
-          nome: empresa.nome, // Cria com o mesmo nome da empresa
+          nome: empresa.nome,
           empresa_id: selectedEmpresa,
           status: "ativa",
         })
@@ -112,7 +109,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     },
     onSuccess: (newObra) => {
       toast.success(`Obra "${newObra.nome}" criada com sucesso!`);
-      // Atualiza a lista local e seleciona automaticamente
       setObras([newObra]);
       setSelectedObra(newObra.id);
     },
@@ -120,7 +116,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       toast.error("Erro ao criar obra: " + error.message);
     },
   });
-  // --------------------------------------------------
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -211,7 +206,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           data_nascimento: c.data_nascimento,
           salario: c.salario,
           classificacao_salario: c.classificacao_salario,
-          status: "ativo",
+          status: "ativo" as "ativo" | "desligado", // <--- CORREÇÃO AQUI (Cast Explicito)
         }));
 
         const { error: upsertError } = await supabase
