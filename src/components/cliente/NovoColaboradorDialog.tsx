@@ -13,59 +13,76 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCPF, validateCPF } from "@/lib/validators";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Plus } from "lucide-react";
-
-const CLASSIFICACOES_SALARIO = [
-  { label: "Ajudante Comum", minimo: 1454.20 },
-  { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.20 },
-  { label: "Oficial", minimo: 2378.34 },
-  { label: "Op. Qualificado I", minimo: 2637.80 },
-  { label: "Op. Qualificado II", minimo: 3262.60 },
-  { label: "Op. Qualificado III", minimo: 4037.00 },
-];
-
+const CLASSIFICACOES_SALARIO = [{
+  label: "Ajudante Comum",
+  minimo: 1454.20
+}, {
+  label: "Ajudante Prático/Meio-Oficial",
+  minimo: 1476.20
+}, {
+  label: "Oficial",
+  minimo: 2378.34
+}, {
+  label: "Op. Qualificado I",
+  minimo: 2637.80
+}, {
+  label: "Op. Qualificado II",
+  minimo: 3262.60
+}, {
+  label: "Op. Qualificado III",
+  minimo: 4037.00
+}];
 const colaboradorSchema = z.object({
   nome: z.string().min(1, "Nome é obrigatório"),
-  sexo: z.enum(["Masculino", "Feminino"], { required_error: "Sexo é obrigatório" }),
-  cpf: z.string()
-    .min(1, "CPF é obrigatório")
-    .refine((val) => validateCPF(val), "CPF inválido"),
+  sexo: z.enum(["Masculino", "Feminino"], {
+    required_error: "Sexo é obrigatório"
+  }),
+  cpf: z.string().min(1, "CPF é obrigatório").refine(val => validateCPF(val), "CPF inválido"),
   data_nascimento: z.string().min(1, "Data de nascimento é obrigatória"),
-  salario: z.string()
-    .min(1, "Salário é obrigatório")
-    .refine((val) => {
-      const num = parseFloat(val.replace(/[^\d,]/g, '').replace(',', '.'));
-      return !isNaN(num) && num >= 0;
-    }, "Salário deve ser um valor válido"),
-  classificacao: z.enum(["CLT", "SÓCIOS", "PRESTADOR DE SERVIÇO"], { required_error: "Classificação é obrigatória" }),
+  salario: z.string().min(1, "Salário é obrigatório").refine(val => {
+    const num = parseFloat(val.replace(/[^\d,]/g, '').replace(',', '.'));
+    return !isNaN(num) && num >= 0;
+  }, "Salário deve ser um valor válido"),
+  classificacao: z.enum(["CLT", "SÓCIOS", "PRESTADOR DE SERVIÇO"], {
+    required_error: "Classificação é obrigatória"
+  }),
   aposentado: z.boolean().default(false),
   afastado: z.boolean().default(false),
   cid: z.string().optional(),
-  empresa_id: z.string().optional(),
-}).refine((data) => {
+  empresa_id: z.string().optional()
+}).refine(data => {
   if (data.afastado && !data.cid) {
     return false;
   }
   return true;
 }, {
   message: "CID é obrigatório quando o colaborador está afastado",
-  path: ["cid"],
+  path: ["cid"]
 });
-
 type ColaboradorFormData = z.infer<typeof colaboradorSchema>;
-
 interface NovoColaboradorDialogProps {
   obraId?: string;
   onSuccess?: () => void;
   disabled?: boolean;
 }
-
-export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColaboradorDialogProps) {
+export function NovoColaboradorDialog({
+  obraId,
+  onSuccess,
+  disabled
+}: NovoColaboradorDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [empresas, setEmpresas] = useState<Array<{ id: string; nome: string }>>([]);
-  const { toast } = useToast();
-  const { profile, isAdmin } = useUserRole();
-
+  const [empresas, setEmpresas] = useState<Array<{
+    id: string;
+    nome: string;
+  }>>([]);
+  const {
+    toast
+  } = useToast();
+  const {
+    profile,
+    isAdmin
+  } = useUserRole();
   const form = useForm<ColaboradorFormData>({
     resolver: zodResolver(colaboradorSchema),
     defaultValues: {
@@ -75,21 +92,18 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
       salario: "",
       aposentado: false,
       afastado: false,
-      cid: "",
-    },
+      cid: ""
+    }
   });
-
   const afastado = form.watch("afastado");
 
   // Buscar empresas para admin
   useEffect(() => {
     if (isAdmin && open) {
       const fetchEmpresas = async () => {
-        const { data } = await supabase
-          .from("empresas")
-          .select("id, nome")
-          .order("nome");
-        
+        const {
+          data
+        } = await supabase.from("empresas").select("id, nome").order("nome");
         if (data) {
           setEmpresas(data);
         }
@@ -104,74 +118,59 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
     if (valorSalario < CLASSIFICACOES_SALARIO[0].minimo) {
       return CLASSIFICACOES_SALARIO[0].label;
     }
-    
+
     // Encontra a maior classificação cujo mínimo é <= salário
-    const classificacao = [...CLASSIFICACOES_SALARIO]
-      .reverse()
-      .find(c => valorSalario >= c.minimo);
-    
+    const classificacao = [...CLASSIFICACOES_SALARIO].reverse().find(c => valorSalario >= c.minimo);
     return classificacao?.label || CLASSIFICACOES_SALARIO[0].label;
   };
-
   const onSubmit = async (data: ColaboradorFormData) => {
     try {
       setLoading(true);
-
       const empresa_id = isAdmin ? data.empresa_id : profile?.empresa_id;
-
       if (!empresa_id) {
         toast({
           title: "Erro",
           description: "Empresa não identificada",
-          variant: "destructive",
+          variant: "destructive"
         });
         return;
       }
 
       // Verificar CPF duplicado
-      const { data: existente } = await supabase
-        .from("colaboradores")
-        .select("id")
-        .eq("cpf", data.cpf.replace(/\D/g, ''))
-        .eq("empresa_id", empresa_id)
-        .maybeSingle();
-
+      const {
+        data: existente
+      } = await supabase.from("colaboradores").select("id").eq("cpf", data.cpf.replace(/\D/g, '')).eq("empresa_id", empresa_id).maybeSingle();
       if (existente) {
         toast({
           title: "Erro",
           description: "Já existe um colaborador com este CPF nesta empresa",
-          variant: "destructive",
+          variant: "destructive"
         });
         return;
       }
-
       const valorSalario = parseFloat(data.salario.replace(/[^\d,]/g, '').replace(',', '.'));
       const classificacaoSalario = calcularClassificacaoSalario(valorSalario);
-
-      const { error } = await supabase
-        .from("colaboradores")
-        .insert({
-          nome: data.nome,
-          sexo: data.sexo,
-          cpf: data.cpf.replace(/\D/g, ''),
-          data_nascimento: data.data_nascimento,
-          salario: valorSalario,
-          classificacao: data.classificacao,
-          classificacao_salario: classificacaoSalario,
-          aposentado: data.aposentado,
-          afastado: data.afastado,
-          cid: data.afastado ? data.cid : null,
-          empresa_id,
-          obra_id: obraId || null,
-        });
-
+      const {
+        error
+      } = await supabase.from("colaboradores").insert({
+        nome: data.nome,
+        sexo: data.sexo,
+        cpf: data.cpf.replace(/\D/g, ''),
+        data_nascimento: data.data_nascimento,
+        salario: valorSalario,
+        classificacao: data.classificacao,
+        classificacao_salario: classificacaoSalario,
+        aposentado: data.aposentado,
+        afastado: data.afastado,
+        cid: data.afastado ? data.cid : null,
+        empresa_id,
+        obra_id: obraId || null
+      });
       if (error) throw error;
-
       toast({
         title: "Sucesso",
-        description: "Colaborador cadastrado com sucesso",
+        description: "Colaborador cadastrado com sucesso"
       });
-
       form.reset();
       setOpen(false);
       onSuccess?.();
@@ -180,13 +179,12 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
       toast({
         title: "Erro",
         description: "Erro ao cadastrar colaborador",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
-
   const formatarMoeda = (value: string) => {
     const numbers = value.replace(/\D/g, '');
     const amount = parseFloat(numbers) / 100;
@@ -195,14 +193,9 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
       currency: 'BRL'
     }).format(amount);
   };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
+  return <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button disabled={disabled}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Colaborador
-        </Button>
+        
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -214,12 +207,9 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {isAdmin && (
-              <FormField
-                control={form.control}
-                name="empresa_id"
-                render={({ field }) => (
-                  <FormItem>
+            {isAdmin && <FormField control={form.control} name="empresa_id" render={({
+            field
+          }) => <FormItem>
                     <FormLabel>Empresa *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
@@ -228,39 +218,28 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {empresas.map((empresa) => (
-                          <SelectItem key={empresa.id} value={empresa.id}>
+                        {empresas.map(empresa => <SelectItem key={empresa.id} value={empresa.id}>
                             {empresa.nome}
-                          </SelectItem>
-                        ))}
+                          </SelectItem>)}
                       </SelectContent>
                     </Select>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+                  </FormItem>} />}
 
-            <FormField
-              control={form.control}
-              name="nome"
-              render={({ field }) => (
-                <FormItem>
+            <FormField control={form.control} name="nome" render={({
+            field
+          }) => <FormItem>
                   <FormLabel>Nome *</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="Nome completo" />
                   </FormControl>
                   <FormMessage />
-                </FormItem>
-              )}
-            />
+                </FormItem>} />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="sexo"
-                render={({ field }) => (
-                  <FormItem>
+              <FormField control={form.control} name="sexo" render={({
+              field
+            }) => <FormItem>
                     <FormLabel>Sexo *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
@@ -274,75 +253,50 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
                       </SelectContent>
                     </Select>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
 
-              <FormField
-                control={form.control}
-                name="cpf"
-                render={({ field }) => (
-                  <FormItem>
+              <FormField control={form.control} name="cpf" render={({
+              field
+            }) => <FormItem>
                     <FormLabel>CPF *</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        placeholder="000.000.000-00"
-                        maxLength={14}
-                        onChange={(e) => {
-                          const formatted = formatCPF(e.target.value);
-                          field.onChange(formatted);
-                        }}
-                      />
+                      <Input {...field} placeholder="000.000.000-00" maxLength={14} onChange={e => {
+                  const formatted = formatCPF(e.target.value);
+                  field.onChange(formatted);
+                }} />
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="data_nascimento"
-                render={({ field }) => (
-                  <FormItem>
+              <FormField control={form.control} name="data_nascimento" render={({
+              field
+            }) => <FormItem>
                     <FormLabel>Data de Nascimento *</FormLabel>
                     <FormControl>
                       <Input {...field} type="date" />
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
 
-              <FormField
-                control={form.control}
-                name="salario"
-                render={({ field }) => (
-                  <FormItem>
+              <FormField control={form.control} name="salario" render={({
+              field
+            }) => <FormItem>
                     <FormLabel>Salário *</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        placeholder="R$ 0,00"
-                        onChange={(e) => {
-                          const formatted = formatarMoeda(e.target.value);
-                          field.onChange(formatted);
-                        }}
-                      />
+                      <Input {...field} placeholder="R$ 0,00" onChange={e => {
+                  const formatted = formatarMoeda(e.target.value);
+                  field.onChange(formatted);
+                }} />
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
             </div>
 
-            <FormField
-              control={form.control}
-              name="classificacao"
-              render={({ field }) => (
-                <FormItem>
+            <FormField control={form.control} name="classificacao" render={({
+            field
+          }) => <FormItem>
                   <FormLabel>Classificação *</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
@@ -357,74 +311,47 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
                     </SelectContent>
                   </Select>
                   <FormMessage />
-                </FormItem>
-              )}
-            />
+                </FormItem>} />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="aposentado"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+              <FormField control={form.control} name="aposentado" render={({
+              field
+            }) => <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Aposentado</FormLabel>
                     </div>
                     <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
 
-              <FormField
-                control={form.control}
-                name="afastado"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+              <FormField control={form.control} name="afastado" render={({
+              field
+            }) => <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Afastado</FormLabel>
                     </div>
                     <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
-                  </FormItem>
-                )}
-              />
+                  </FormItem>} />
             </div>
 
-            {afastado && (
-              <FormField
-                control={form.control}
-                name="cid"
-                render={({ field }) => (
-                  <FormItem>
+            {afastado && <FormField control={form.control} name="cid" render={({
+            field
+          }) => <FormItem>
                     <FormLabel>CID *</FormLabel>
                     <FormControl>
                       <Input {...field} placeholder="Código CID" />
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+                  </FormItem>} />}
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  form.reset();
-                  setOpen(false);
-                }}
-                disabled={loading}
-              >
+              <Button type="button" variant="outline" onClick={() => {
+              form.reset();
+              setOpen(false);
+            }} disabled={loading}>
                 Cancelar
               </Button>
               <Button type="submit" disabled={loading}>
@@ -434,6 +361,5 @@ export function NovoColaboradorDialog({ obraId, onSuccess, disabled }: NovoColab
           </form>
         </Form>
       </DialogContent>
-    </Dialog>
-  );
+    </Dialog>;
 }
