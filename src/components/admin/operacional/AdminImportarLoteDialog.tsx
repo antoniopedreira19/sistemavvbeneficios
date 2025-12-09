@@ -8,8 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, Upload, FileSpreadsheet, CheckCircle, Plus, Building, AlertTriangle } from "lucide-react";
+import {
+  Loader2,
+  Upload,
+  FileSpreadsheet,
+  CheckCircle,
+  Plus,
+  Building,
+  AlertTriangle,
+  XCircle,
+  CheckCircle2,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateCPF, formatCPF } from "@/lib/validators";
 
@@ -28,7 +39,20 @@ const calcularClassificacao = (salario: number) => {
   return item?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
-// Helpers
+// Interface para controle de validação
+interface ValidatedRow {
+  linha: number;
+  nome: string;
+  cpf: string;
+  sexo: string;
+  data_nascimento: string;
+  salario: number;
+  classificacao_salario: string;
+  status: "valido" | "erro";
+  erros: string[];
+}
+
+// Helpers de normalização
 const normalizarHeader = (h: string) =>
   h
     .toLowerCase()
@@ -41,7 +65,7 @@ const normalizarSexo = (valor: any): string => {
   const str = String(valor).trim().toLowerCase();
   if (["masculino", "masc", "m"].includes(str)) return "Masculino";
   if (["feminino", "fem", "f"].includes(str)) return "Feminino";
-  return "Masculino";
+  return "Masculino"; // Default
 };
 
 const normalizarSalario = (valor: any): number => {
@@ -54,14 +78,19 @@ const normalizarSalario = (valor: any): number => {
 
 const normalizarData = (valor: any): string => {
   if (!valor) return new Date().toISOString().split("T")[0];
+
   const str = String(valor).trim();
+  // DD/MM/AAAA
   const ddmmyyyy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+
+  // Excel Serial Date
   if (!isNaN(Number(valor))) {
     const excelDate = XLSX.SSF.parse_date_code(Number(valor));
     if (excelDate)
       return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
   }
+
   return str;
 };
 
@@ -79,7 +108,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [selectedObra, setSelectedObra] = useState("");
   const [competencia, setCompetencia] = useState("");
 
-  const [colaboradores, setColaboradores] = useState<any[]>([]);
+  const [colaboradores, setColaboradores] = useState<ValidatedRow[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -185,7 +214,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       }
 
       if (!targetSheetName) {
-        toast.error("Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba.");
+        toast.error(
+          "Não encontramos as colunas 'Nome' e 'CPF' em nenhuma aba. Verifique se a linha 1 contém os cabeçalhos.",
+        );
         setLoading(false);
         return;
       }
@@ -203,38 +234,54 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       const idxNasc = mapIndex(["nascimento", "data", "dtnasc"]);
       const idxSexo = mapIndex(["sexo", "genero"]);
 
-      const validos = [];
+      const processados: ValidatedRow[] = [];
+      const cpfsVistos = new Set<string>();
+
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0) continue;
 
-        const nome = row[idxNome];
-        const cpfRaw = row[idxCPF];
-
-        if (!nome || !cpfRaw) continue;
-
+        const nome = row[idxNome] ? String(row[idxNome]).trim() : "";
+        const cpfRaw = row[idxCPF] ? String(row[idxCPF]) : "";
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
-        const cpfLimpo = String(cpfRaw).replace(/\D/g, "");
 
-        if (cpfLimpo.length !== 11) continue;
+        const cpfLimpo = cpfRaw.replace(/\D/g, "");
+        const erros: string[] = [];
 
-        validos.push({
-          nome: String(nome).toUpperCase().trim(),
+        // Validações
+        if (!nome) erros.push("Nome obrigatório");
+        if (cpfLimpo.length !== 11) erros.push("CPF inválido (tamanho)");
+        else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido (digito)");
+
+        if (cpfsVistos.has(cpfLimpo)) {
+          erros.push("CPF duplicado na planilha");
+        }
+
+        if (cpfLimpo) cpfsVistos.add(cpfLimpo);
+
+        processados.push({
+          linha: i + 1,
+          nome: nome.toUpperCase(),
           cpf: cpfLimpo,
           sexo: idxSexo !== -1 ? normalizarSexo(row[idxSexo]) : "Masculino",
           data_nascimento: idxNasc !== -1 ? normalizarData(row[idxNasc]) : new Date().toISOString().split("T")[0],
           salario: salario,
           classificacao_salario: calcularClassificacao(salario),
+          status: erros.length > 0 ? "erro" : "valido",
+          erros: erros,
         });
       }
 
-      if (validos.length === 0) {
-        toast.error("Nenhum colaborador válido encontrado.");
+      if (processados.length === 0) {
+        toast.error("Nenhum dado encontrado na aba selecionada.");
         setLoading(false);
         return;
       }
 
-      setColaboradores(validos);
+      // Ordenar: Erros primeiro para facilitar correção
+      processados.sort((a, b) => (a.status === "erro" ? -1 : 1));
+
+      setColaboradores(processados);
       setStep("conclusao");
     } catch (error) {
       console.error(error);
@@ -245,12 +292,18 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   };
 
   const handleConfirmarImportacao = async () => {
-    if (!selectedEmpresa || !selectedObra || colaboradores.length === 0) return;
+    // Filtra apenas os válidos para importar
+    const validos = colaboradores.filter((c) => c.status === "valido");
+
+    if (!selectedEmpresa || !selectedObra || validos.length === 0) {
+      toast.error("Não há colaboradores válidos para importar.");
+      return;
+    }
 
     setLoading(true);
     try {
       // 1. Criar Lote
-      const valorTotal = colaboradores.reduce((acc, c) => acc + 50, 0);
+      const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
       const { data: lote, error: loteError } = await supabase
         .from("lotes_mensais")
@@ -259,8 +312,8 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           obra_id: selectedObra,
           competencia: competencia,
           status: "concluido",
-          total_colaboradores: colaboradores.length,
-          total_aprovados: colaboradores.length,
+          total_colaboradores: validos.length,
+          total_aprovados: validos.length,
           total_reprovados: 0,
           valor_total: valorTotal,
           enviado_seguradora_em: new Date().toISOString(),
@@ -273,10 +326,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       // 2. Processar em Batches (Lotes de 100)
       const BATCH_SIZE = 100;
-      for (let i = 0; i < colaboradores.length; i += BATCH_SIZE) {
-        const batch = colaboradores.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < validos.length; i += BATCH_SIZE) {
+        const batch = validos.slice(i, i + BATCH_SIZE);
 
-        // A. Upsert na Mestra e RETORNAR IDs
+        // A. Upsert na Mestra
         const mestraData = batch.map((c) => ({
           empresa_id: selectedEmpresa,
           obra_id: selectedObra,
@@ -289,26 +342,24 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           status: "ativo" as "ativo" | "desligado",
         }));
 
-        // CORREÇÃO: Pegar os dados retornados (id, cpf) para vincular depois
         const { data: upsertedCols, error: upsertError } = await supabase
           .from("colaboradores")
-          .upsert(mestraData, { onConflict: "cpf,empresa_id", ignoreDuplicates: false })
-          .select("id, cpf"); // <--- Importante: Retorna o ID gerado/existente
+          .upsert(mestraData, { onConflict: "cpf", ignoreDuplicates: false })
+          .select("id, cpf");
 
         if (upsertError) {
           console.error("Erro upsert mestre", upsertError);
-          throw new Error(`Erro ao salvar colaborador na base mestra: ${upsertError.message}`);
+          throw new Error(`Erro ao salvar na base mestra: ${upsertError.message}`);
         }
 
         if (!upsertedCols) throw new Error("Erro: Nenhum dado retornado do upsert.");
 
-        // Criar mapa CPF -> ID para vincular rápido
         const cpfToIdMap = new Map(upsertedCols.map((c) => [c.cpf, c.id]));
 
-        // B. Insert na Tabela de Lote (Com vínculo correto)
+        // B. Insert na Tabela de Lote
         const loteItemsData = batch.map((c) => ({
           lote_id: lote.id,
-          colaborador_id: cpfToIdMap.get(c.cpf), // <--- VÍNCULO CORRETO AQUI
+          colaborador_id: cpfToIdMap.get(c.cpf),
           nome: c.nome,
           cpf: c.cpf,
           sexo: c.sexo,
@@ -323,7 +374,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      toast.success("Importação concluída e Lote Finalizado!");
+      toast.success(`Sucesso! ${validos.length} colaboradores importados.`);
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       onOpenChange(false);
 
@@ -340,9 +391,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
+  // Contadores para o resumo
+  const totalValidos = colaboradores.filter((c) => c.status === "valido").length;
+  const totalErros = colaboradores.filter((c) => c.status === "erro").length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
           <DialogDescription>Importe uma lista já aprovada diretamente para o status "Concluído".</DialogDescription>
@@ -450,65 +505,70 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
           {step === "conclusao" && (
             <div className="space-y-6 animate-in fade-in">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-bold">Arquivo Processado com Sucesso!</p>
-                  <p className="text-sm mt-1">
-                    Detectamos <strong>{colaboradores.length} colaboradores</strong> válidos.
-                  </p>
-                </div>
+              {/* Resumo de Validação */}
+              <div className="flex gap-4">
+                <Alert className="bg-green-50 border-green-200 flex-1">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertTitle className="text-green-800">Prontos para Importar</AlertTitle>
+                  <AlertDescription className="text-green-700">{totalValidos} colaboradores válidos.</AlertDescription>
+                </Alert>
+
+                {totalErros > 0 && (
+                  <Alert className="bg-red-50 border-red-200 flex-1">
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <AlertTitle className="text-red-800">Erros Encontrados</AlertTitle>
+                    <AlertDescription className="text-red-700">{totalErros} linhas serão ignoradas.</AlertDescription>
+                  </Alert>
+                )}
               </div>
 
-              {/* TABELA DE PRÉ-VISUALIZAÇÃO */}
-              <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+              {/* TABELA DE PRÉ-VISUALIZAÇÃO COM STATUS */}
+              <div className="border rounded-lg max-h-[400px] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[50px]">Ln</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
-                      <TableHead>Cargo Estimado</TableHead>
-                      <TableHead className="text-right">Salário</TableHead>
+                      <TableHead>Salário</TableHead>
+                      <TableHead>Mensagem</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {colaboradores.slice(0, 100).map((colab, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">{colab.nome}</TableCell>
-                        <TableCell className="font-mono text-xs">{formatCPF(colab.cpf)}</TableCell>
+                    {colaboradores.slice(0, 200).map((colab, idx) => (
+                      <TableRow key={idx} className={colab.status === "erro" ? "bg-red-50/50" : ""}>
+                        <TableCell className="text-xs text-muted-foreground">{colab.linha}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-[10px] whitespace-nowrap">
-                            {colab.classificacao_salario}
-                          </Badge>
+                          {colab.status === "valido" ? (
+                            <Badge className="bg-green-500 hover:bg-green-600 text-[10px]">Válido</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Inválido
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="font-medium text-xs truncate max-w-[150px]" title={colab.nome}>
+                          {colab.nome}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {colab.status === "valido" ? formatCPF(colab.cpf) : colab.cpf}
+                        </TableCell>
+                        <TableCell className="text-xs">
                           {colab.salario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                         </TableCell>
+                        <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
-                    {colaboradores.length > 100 && (
+                    {colaboradores.length > 200 && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-4 text-xs">
-                          ... e mais {colaboradores.length - 100} colaboradores.
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 200} linhas.
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
-              </div>
-
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <AlertTriangle className="h-5 w-5 text-yellow-400" aria-hidden="true" />
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-yellow-700">
-                      Ao confirmar, este lote será criado com status <strong>CONCLUÍDO</strong> e estará pronto para
-                      faturamento. Certifique-se de que a lista está correta.
-                    </p>
-                  </div>
-                </div>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
@@ -523,11 +583,11 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 </Button>
                 <Button
                   onClick={handleConfirmarImportacao}
-                  disabled={loading}
+                  disabled={loading || totalValidos === 0}
                   className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                 >
                   {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                  Confirmar e Finalizar
+                  Importar {totalValidos} Válidos
                 </Button>
               </div>
             </div>
