@@ -1,90 +1,75 @@
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import { useUserRole } from "@/hooks/useUserRole";
-import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
+
+const obraSchema = z.object({
+  nome: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
+  status: z.enum(["ativa", "inativa"]).default("ativa"),
+});
+
+type ObraFormData = z.infer<typeof obraSchema>;
 
 interface NovaObraDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  empresaId: string;
+  onSuccess?: () => void;
 }
 
-export function NovaObraDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-}: NovaObraDialogProps) {
-  const { profile } = useUserRole();
-  const [nome, setNome] = useState("");
-  const [status, setStatus] = useState<"ativa" | "inativa">("ativa");
-  const [dataPrevisaoTermino, setDataPrevisaoTermino] = useState<Date>();
+export function NovaObraDialog({ open, onOpenChange, empresaId, onSuccess }: NovaObraDialogProps) {
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<ObraFormData>({
+    resolver: zodResolver(obraSchema),
+    defaultValues: {
+      nome: "",
+      status: "ativa",
+    },
+  });
 
-    if (!profile?.empresa_id) {
-      toast.error("Empresa não identificada");
-      return;
-    }
-
-    if (!nome.trim()) {
-      toast.error("Nome da obra é obrigatório");
-      return;
-    }
+  const onSubmit = async (data: ObraFormData) => {
+    if (!empresaId) return;
+    setLoading(true);
 
     try {
-      setLoading(true);
-
       const { error } = await supabase.from("obras").insert({
-        empresa_id: profile.empresa_id,
-        nome: nome.trim(),
-        status,
-        data_previsao_termino: dataPrevisaoTermino ? format(dataPrevisaoTermino, "yyyy-MM-dd") : null,
+        nome: data.nome,
+        status: data.status,
+        empresa_id: empresaId,
       });
 
       if (error) throw error;
 
-      toast.success("Obra criada com sucesso");
-      setNome("");
-      setStatus("ativa");
-      setDataPrevisaoTermino(undefined);
-      onOpenChange(false);
-      onSuccess();
+      toast({
+        title: "Obra criada!",
+        description: "A obra foi cadastrada com sucesso.",
+      });
+
+      form.reset();
+      onOpenChange(false); // Fecha o modal
+      onSuccess?.(); // Atualiza a lista
     } catch (error: any) {
-      console.error("Erro ao criar obra:", error);
-      if (error.code === "23505") {
-        toast.error("Já existe uma obra com este nome");
-      } else {
-        toast.error("Erro ao criar obra");
-      }
+      toast({
+        title: "Erro ao criar obra",
+        description: error.message,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -92,80 +77,39 @@ export function NovaObraDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Nova Obra</DialogTitle>
+          <DialogDescription>Cadastre uma nova obra ou centro de custo para alocar colaboradores.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="nome">Nome da Obra *</Label>
-            <Input
-              id="nome"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex: Obra Centro"
-              required
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="nome"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nome da Obra</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Ex: Residencial Flores" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select value={status} onValueChange={(v: any) => setStatus(v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ativa">Ativa</SelectItem>
-                <SelectItem value="inativa">Inativa</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Previsão de Término</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !dataPrevisaoTermino && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dataPrevisaoTermino ? (
-                    format(dataPrevisaoTermino, "PPP", { locale: ptBR })
-                  ) : (
-                    <span>Selecione uma data</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dataPrevisaoTermino}
-                  onSelect={setDataPrevisaoTermino}
-                  initialFocus
-                  className="pointer-events-auto"
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Criando..." : "Criar Obra"}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Criar Obra
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
