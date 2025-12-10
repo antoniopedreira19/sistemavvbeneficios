@@ -8,7 +8,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, RotateCcw, FileDown } from "lucide-react";
+import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, RotateCcw, FileDown, Pencil } from "lucide-react";
 
 export interface LoteOperacional {
   id: string;
@@ -18,9 +18,9 @@ export interface LoteOperacional {
   valor_total: number | null;
   created_at: string;
   status: string;
-  empresa: { nome: string; cnpj?: string } | null; // Adicionado cnpj opcional na tipagem
+  empresa: { nome: string; cnpj?: string } | null;
   obra: { nome: string } | null;
-  empresa_id?: string; // Útil para buscar dados
+  empresa_id?: string;
 }
 
 interface LotesTableProps {
@@ -31,7 +31,8 @@ interface LotesTableProps {
   onPageChange: (page: number) => void;
   actionType: "enviar" | "processar" | "pendencia" | "faturar" | "reanalise";
   onAction: (lote: LoteOperacional) => void;
-  onDownload?: (lote: LoteOperacional) => void; // Nova prop
+  onDownload?: (lote: LoteOperacional) => void;
+  onEdit?: (lote: LoteOperacional) => void;
   actionLoading?: string | null;
 }
 
@@ -43,13 +44,13 @@ export function LotesTable({
   onPageChange,
   actionType,
   onAction,
-  onDownload, // Recebe a função
+  onDownload,
+  onEdit,
   actionLoading,
 }: LotesTableProps) {
   const getActionButton = (lote: LoteOperacional) => {
     const isActionLoading = actionLoading === lote.id;
 
-    // Lógica interna de status
     const getInternalAction = () => {
       if (actionType === "reanalise") {
         if (lote.status === "aguardando_reanalise") return "enviar_reanalise";
@@ -60,7 +61,6 @@ export function LotesTable({
     };
 
     const currentAction = getInternalAction();
-
     let MainButton = null;
 
     switch (currentAction) {
@@ -117,7 +117,20 @@ export function LotesTable({
 
     return (
       <div className="flex items-center justify-end gap-2">
-        {/* Botão de Download (Sempre visível se a função for passada) */}
+        {/* Botão de Editar */}
+        {onEdit && (lote.status === "concluido" || lote.status === "aguardando_reanalise") && (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onEdit(lote)}
+            title="Editar Lote"
+            className="text-muted-foreground hover:text-blue-600"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Botão de Download */}
         {onDownload && (
           <Button
             size="icon"
