@@ -4,6 +4,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils"; // CORREÇÃO: Import necessário para classes condicionais
+
+import {
   Building2,
   Wallet,
   DollarSign,
@@ -12,8 +24,7 @@ import {
   BarChart3,
   Filter,
   TrendingUp,
-  Trophy, // Ícone para o Top 5
-  Activity,
+  Trophy,
   CheckCircle2,
 } from "lucide-react";
 import {
@@ -38,10 +49,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Cores para gráficos
 const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"];
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
-const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"]; // Tons de verde
+const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"];
 
 export default function Dashboard() {
   const [selectedCompetencia, setSelectedCompetencia] = useState<string>("");
+  const [showCompaniesModal, setShowCompaniesModal] = useState(false); // Novo estado do modal
 
   // 1. BUSCAR LISTA DE COMPETÊNCIAS
   const { data: competencias = [] } = useQuery({
@@ -76,13 +88,13 @@ export default function Dashboard() {
     queryFn: async () => {
       console.log("Buscando dados para:", selectedCompetencia);
 
-      // A. Empresas Ativas (Total na Carteira)
+      // A. Empresas Ativas
       const { count: empresasAtivas } = await supabase
         .from("empresas")
         .select("*", { count: "exact", head: true })
         .eq("status", "ativa");
 
-      // B. Vidas Ativas Totais (Para Faturamento Esperado)
+      // B. Vidas Ativas Totais
       const { count: totalVidasAtivas } = await supabase
         .from("colaboradores")
         .select("*", { count: "exact", head: true })
@@ -90,7 +102,7 @@ export default function Dashboard() {
 
       const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
 
-      // C. Lotes do Mês Selecionado (COM JOIN DA EMPRESA para o Top 5)
+      // C. Lotes do Mês Selecionado (Com JOIN de Empresa e Obra)
       const { data: lotesMes } = await supabase
         .from("lotes_mensais")
         .select(
@@ -101,21 +113,22 @@ export default function Dashboard() {
           total_colaboradores, 
           valor_total, 
           total_aprovados,
-          empresa:empresas(nome) 
+          empresa:empresas(nome), 
+          obra:obras(nome)
         `,
         )
         .eq("competencia", selectedCompetencia);
 
       const lotesIds = lotesMes?.map((l) => l.id) || [];
 
-      // D. Dados Detalhados
+      // D. Dados Detalhados dos Colaboradores
       let colaboradoresDetalhados: any[] = [];
       if (lotesIds.length > 0) {
         const { data } = await supabase.from("colaboradores_lote").select("sexo, salario").in("lote_id", lotesIds);
         colaboradoresDetalhados = data || [];
       }
 
-      // E. Faturamento Realizado (Notas do Mês)
+      // E. Faturamento Realizado
       const { data: notasMes } = await supabase
         .from("notas_fiscais")
         .select("valor_total")
@@ -200,12 +213,10 @@ export default function Dashboard() {
 
   const evolutionChartData = Object.values(evolutionMap || {}).slice(-6) as any[];
 
-  // --- NOVO GRÁFICO: TOP 5 FATURAMENTO ---
-  // Agrupar lotes por empresa e somar valor
+  // Top 5 Faturamento
   const revenueByCompany: Record<string, number> = {};
   dashboardData?.lotesMes.forEach((lote: any) => {
     const nome = lote.empresa?.nome || "Desconhecida";
-    // Se não tiver valor_total salvo, estima (vidas * 50)
     const valor = Number(lote.valor_total) || Number(lote.total_colaboradores || 0) * 50;
     revenueByCompany[nome] = (revenueByCompany[nome] || 0) + valor;
   });
@@ -214,6 +225,15 @@ export default function Dashboard() {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 5);
+
+  // DADOS PARA O MODAL (Lista de empresas que enviaram)
+  const companiesInMonthData =
+    dashboardData?.lotesMes.map((lote: any) => ({
+      empresa: lote.empresa?.nome || "Desconhecida",
+      obra: lote.obra?.nome || "Obra Principal",
+      vidas: lote.total_colaboradores || 0,
+      faturamento: Number(lote.valor_total) || Number(lote.total_colaboradores) * 50,
+    })) || [];
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -243,7 +263,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI CARDS - NOVA ORDEM */}
+      {/* KPI CARDS */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {/* 1. Empresas Ativas (Global) */}
         <KpiCard
@@ -253,13 +273,15 @@ export default function Dashboard() {
           description="Total na carteira"
         />
 
-        {/* 2. Empresas no Mês */}
+        {/* 2. Empresas no Mês (CLICÁVEL) */}
         <KpiCard
           title="Empresas no Mês"
           value={totalEmpresasNoMes}
           icon={CheckCircle2}
           description={`Enviaram em ${selectedCompetencia.split("/")[0]}`}
           iconColor="text-purple-600"
+          className="cursor-pointer hover:shadow-md transition-shadow active:scale-95"
+          onClick={() => totalEmpresasNoMes > 0 && setShowCompaniesModal(true)} // Abre o Modal
         />
 
         {/* 3. Vidas no Mês */}
@@ -291,9 +313,9 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* --- LINHA 1 DE GRÁFICOS: EVOLUÇÃO + TOP 5 --- */}
+      {/* GRÁFICOS */}
       <div className="grid gap-4 md:grid-cols-7">
-        {/* Gráfico Evolução (4 colunas) */}
+        {/* Evolução Financeira */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -316,7 +338,17 @@ export default function Dashboard() {
                     tickFormatter={(val) => `R$${val / 1000}k`}
                   />
                   <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip />
+
+                  {/* TOOLTIP FORMATADO */}
+                  <Tooltip
+                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+                    formatter={(value: any, name: any) => {
+                      if (name === "Faturamento")
+                        return [value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), name];
+                      return [value, name];
+                    }}
+                  />
+
                   <Legend />
                   <Bar
                     yAxisId="left"
@@ -341,7 +373,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* NOVO: Top 5 Faturamento (3 colunas) */}
+        {/* Top 5 */}
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -387,14 +419,12 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* --- LINHA 2 DE GRÁFICOS: GÊNERO + SALÁRIO --- */}
       <div className="grid gap-4 md:grid-cols-2">
-        {/* GRÁFICO DE GÊNERO */}
+        {/* Gênero */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <PieIcon className="h-5 w-5 text-primary" />
-              Distribuição por Gênero
+              <PieIcon className="h-5 w-5 text-primary" /> Distribuição por Gênero
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -421,18 +451,17 @@ export default function Dashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-muted-foreground text-sm">Sem dados de gênero.</div>
+                <div className="text-muted-foreground text-sm">Sem dados.</div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* GRÁFICO DE FAIXA SALARIAL */}
+        {/* Faixa Salarial */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-5 w-5 text-primary" />
-              Faixa Salarial
+              <BarChart3 className="h-5 w-5 text-primary" /> Faixa Salarial
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -462,14 +491,53 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                  Sem dados salariais.
-                </div>
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Sem dados.</div>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* NOVO MODAL: LISTA DE EMPRESAS QUE ENVIARAM */}
+      <Dialog open={showCompaniesModal} onOpenChange={setShowCompaniesModal}>
+        <DialogContent className="sm:max-w-[750px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Empresas na Competência: {selectedCompetencia}</DialogTitle>
+            <DialogDescription>Detalhamento dos envios processados.</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empresa</TableHead>
+                  <TableHead>Obra</TableHead>
+                  <TableHead className="text-center">Vidas</TableHead>
+                  <TableHead className="text-right">Faturamento</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {companiesInMonthData.map((item: any, idx: number) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-medium">{item.empresa}</TableCell>
+                    <TableCell className="text-muted-foreground">{item.obra}</TableCell>
+                    <TableCell className="text-center">
+                      <span className="font-bold">{item.vidas}</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {item.faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setShowCompaniesModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -482,9 +550,11 @@ function KpiCard({
   description,
   highlight = false,
   iconColor = "text-muted-foreground",
+  onClick,
+  className = "",
 }: any) {
   return (
-    <Card className={highlight ? "border-green-500 bg-green-50" : ""}>
+    <Card className={cn(highlight ? "border-green-500 bg-green-50" : "", className)} onClick={onClick}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <Icon className={`h-4 w-4 ${highlight ? "text-green-600" : iconColor}`} />
