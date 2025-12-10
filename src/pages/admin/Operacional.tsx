@@ -20,8 +20,8 @@ import { Button } from "@/components/ui/button";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
+import { EditarLoteDialog } from "@/components/admin/operacional/EditarLoteDialog";
 import ExcelJS from "exceljs";
-// Adicionado formatCPF e formatCNPJ
 import { formatCNPJ, formatCPF } from "@/lib/validators";
 
 const ITEMS_PER_PAGE = 10;
@@ -41,13 +41,15 @@ export default function Operacional() {
 
   // Dialogs States
   const [selectedLote, setSelectedLote] = useState<LoteOperacional | null>(null);
+  const [loteParaEditar, setLoteParaEditar] = useState<LoteOperacional | null>(null);
+
   const [confirmEnviarDialog, setConfirmEnviarDialog] = useState(false);
   const [confirmFaturarDialog, setConfirmFaturarDialog] = useState(false);
   const [processarDialogOpen, setProcessarDialogOpen] = useState(false);
   const [importarDialogOpen, setImportarDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // --- QUERY ---
+  // --- QUERY: AGORA BUSCA CNPJ ---
   const { data: lotes = [], isLoading } = useQuery({
     queryKey: ["lotes-operacional"],
     queryFn: async () => {
@@ -165,30 +167,31 @@ export default function Operacional() {
   // --- DOWNLOAD PADRÃO SEGURADORA (ExcelJS) ---
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
-      toast.info("Preparando download...");
+      toast.info("Gerando arquivo padrão seguradora...");
 
-      // 1. Buscar Colaboradores do Lote
+      // 1. Buscar Colaboradores
       const { data: itens, error: itensError } = await supabase
         .from("colaboradores_lote")
         .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario")
         .eq("lote_id", lote.id)
-        .eq("status_seguradora", "aprovado")
+        .eq("status_seguradora", "aprovado") // Baixa apenas aprovados
         .order("nome");
 
       if (itensError) throw itensError;
       if (!itens || itens.length === 0) {
-        toast.warning("Lote sem colaboradores válidos para baixar.");
+        toast.warning("Lote vazio ou sem aprovados.");
         return;
       }
 
       // 2. Obter CNPJ
       let cnpj = (lote.empresa as any)?.cnpj || "";
+      // Fallback: busca do banco se não veio na query inicial
       if (!cnpj && lote.empresa_id) {
         const { data: emp } = await supabase.from("empresas").select("cnpj").eq("id", lote.empresa_id).single();
         if (emp) cnpj = emp.cnpj;
       }
 
-      // 3. Gerar Excel com ExcelJS
+      // 3. Gerar Excel
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Lista Seguradora");
 
@@ -203,43 +206,44 @@ export default function Operacional() {
       ];
       const headerRow = worksheet.addRow(headers);
 
-      // Estilo e Largura
+      // Estilo de Coluna e Cabeçalho
       const COL_WIDTH = 37.11;
       worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
 
       headerRow.eachCell((cell) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } }; // Azul #203455
         cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
         cell.alignment = { horizontal: "center" };
       });
 
-      // Adicionar Dados com Tipagem Correta para Excel
+      // Dados
       itens.forEach((c) => {
-        // DATA: Criar objeto Date para o Excel entender como data
-        // Formato esperado do banco: YYYY-MM-DD
+        // Data Nascimento (DD/MM/AAAA)
         let dataNascDate = null;
         if (c.data_nascimento) {
+          // Suporta YYYY-MM-DD
           const parts = c.data_nascimento.split("-");
-          // new Date(ano, mes-1, dia)
-          dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          if (parts.length === 3) {
+            dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          }
         }
 
         const row = worksheet.addRow([
-          c.nome.toUpperCase(), // Nome em Maiúsculo
+          c.nome.toUpperCase(),
           c.sexo,
-          formatCPF(c.cpf), // CPF formatado (String)
-          dataNascDate, // Data (Objeto)
-          Number(c.salario), // Salário (Número)
+          formatCPF(c.cpf),
+          dataNascDate,
+          Number(c.salario),
           c.classificacao_salario,
-          formatCNPJ(cnpj), // CNPJ formatado (String)
+          formatCNPJ(cnpj),
         ]);
 
-        // Formatação da Célula de Data (DD/MM/AAAA)
+        // Formato Data no Excel
         if (dataNascDate) {
           row.getCell(4).numFmt = "dd/mm/yyyy";
         }
 
-        // Formatação da Célula de Salário (Número com 2 casas)
+        // Formato Moeda (Número com 2 casas)
         row.getCell(5).numFmt = "#,##0.00";
       });
 
@@ -249,11 +253,11 @@ export default function Operacional() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `SEGURADORA_${lote.empresa?.nome}_${lote.competencia.replace("/", "-")}.xlsx`;
+      a.download = `SEGURADORA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
 
-      toast.success("Download concluído com sucesso!");
+      toast.success("Download concluído.");
     } catch (e: any) {
       console.error(e);
       toast.error("Erro ao gerar arquivo: " + e.message);
@@ -328,6 +332,7 @@ export default function Operacional() {
           />
         </TabsList>
 
+        {/* Passando onDownload para as abas que precisam (Geralmente Prontos e talvez Seguradora) */}
         {renderTabContent(
           "entrada",
           "Entrada de Novos Lotes",
@@ -340,6 +345,7 @@ export default function Operacional() {
           "enviar",
           getTotalPages,
           handleDownloadLote,
+          setLoteParaEditar,
         )}
         {renderTabContent(
           "seguradora",
@@ -353,6 +359,7 @@ export default function Operacional() {
           "processar",
           getTotalPages,
           handleDownloadLote,
+          setLoteParaEditar,
         )}
         {renderTabContent(
           "pendencia",
@@ -366,6 +373,7 @@ export default function Operacional() {
           "pendencia",
           getTotalPages,
           handleDownloadLote,
+          setLoteParaEditar,
         )}
         {renderTabContent(
           "reanalise",
@@ -379,6 +387,7 @@ export default function Operacional() {
           "reanalise",
           getTotalPages,
           handleDownloadLote,
+          setLoteParaEditar,
         )}
         {renderTabContent(
           "concluido",
@@ -392,6 +401,7 @@ export default function Operacional() {
           "faturar",
           getTotalPages,
           handleDownloadLote,
+          setLoteParaEditar,
         )}
       </Tabs>
 
@@ -443,6 +453,14 @@ export default function Operacional() {
           competencia={selectedLote.competencia}
         />
       )}
+
+      {loteParaEditar && (
+        <EditarLoteDialog
+          lote={loteParaEditar}
+          open={!!loteParaEditar}
+          onOpenChange={(o) => !o && setLoteParaEditar(null)}
+        />
+      )}
     </div>
   );
 }
@@ -479,6 +497,7 @@ function renderTabContent(
   actionType: any,
   getTotal: any,
   onDownload: any,
+  onEdit: any,
 ) {
   return (
     <TabsContent value={value} className="mt-6">
@@ -492,7 +511,8 @@ function renderTabContent(
           actionType={actionType}
           onAction={(l: any) => handleAction(l, value)}
           actionLoading={actionLoading}
-          onDownload={onDownload} // Passando a função de download
+          onDownload={onDownload}
+          onEdit={onEdit}
         />
       </TabCard>
     </TabsContent>
