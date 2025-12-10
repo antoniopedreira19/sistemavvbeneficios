@@ -61,10 +61,26 @@ const normalizarSexo = (valor: any): string => {
   return "Masculino";
 };
 
+// CORREÇÃO AQUI: Garante que apenas números e ponto decimal sejam mantidos
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
-  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+
+  let str = String(valor);
+
+  // 1. Remove pontos de milhar (apenas o último ponto conta como decimal se houver)
+  // 2. Substitui a vírgula por ponto (se for o separador decimal)
+  // 3. Remove R$ e espaços
+  str = str.replace(/R\$/g, "").replace(/\s/g, "");
+
+  // Se o valor for "1.500,00" -> 1500,00 -> 1500.00
+  // Se o valor for "1500.00" -> 1500.00
+  if (str.includes(",")) {
+    str = str.replace(/\./g, "").replace(",", ".");
+  } else {
+    str = str.replace(/,/g, ""); // Remove vírgula se não for decimal (ex: 1,000 -> 1000)
+  }
+
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
@@ -249,10 +265,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
 
         const cpfLimpoRaw = cpfRaw.replace(/\D/g, "");
-        // CORREÇÃO: Garante 11 dígitos, preenchendo com zeros à esquerda
+        // CORREÇÃO 1: Garante 11 dígitos, preenchendo com zeros à esquerda
         const cpfLimpo = cpfLimpoRaw.padStart(11, "0");
 
-        // Verificação se a linha é totalmente vazia (pula linhas em branco)
+        // CORREÇÃO 2: Pular linhas se todos os campos essenciais estiverem vazios (linhas zeradas)
         if (!nome && cpfLimpo.length === 0 && salario === 0) continue;
 
         const erros: string[] = [];
@@ -283,8 +299,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // Ordenar erros primeiro
-      processados.sort((a, b) => (a.status === "erro" ? -1 : 1));
+      // ORDENAÇÃO CORRIGIDA: Prioriza erro, depois a ordem original (linha)
+      processados.sort((a, b) => {
+        if (a.status === "erro" && b.status === "valido") return -1;
+        if (a.status === "valido" && b.status === "erro") return 1;
+        return a.linha - b.linha; // Mantém a ordem original das linhas
+      });
+
       setColaboradores(processados);
       setStep("conclusao");
     } catch (error) {
@@ -648,6 +669,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
+                    {colaboradores.length > 200 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 200} linhas.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
