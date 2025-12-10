@@ -230,12 +230,13 @@ export default function Dashboard() {
   const companiesInMonthData =
     dashboardData?.lotesMes
       .map((lote: any) => ({
-        empresa: lote.empresa?.nome || "Desconhecida",
-        obra: lote.obra?.nome || "Obra Principal",
+        // APLICAÇÃO DO UPPERCASE AQUI:
+        empresa: lote.empresa?.nome.toUpperCase() || "DESCONHECIDA",
+        obra: lote.obra?.nome.toUpperCase() || "OBRA PRINCIPAL",
+        // FIM APLICAÇÃO DO UPPERCASE
         vidas: lote.total_colaboradores || 0,
         faturamento: Number(lote.valor_total) || Number(lote.total_colaboradores) * 50,
       }))
-      // NOVO: Ordenar por nome da empresa (alfabético)
       ?.sort((a, b) => a.empresa.localeCompare(b.empresa)) || [];
 
   if (isLoading) return <DashboardSkeleton />;
