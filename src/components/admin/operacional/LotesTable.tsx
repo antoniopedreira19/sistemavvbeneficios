@@ -19,7 +19,8 @@ export interface LoteOperacional {
   created_at: string;
   status: string;
   empresa: { nome: string; cnpj?: string } | null;
-  obra: { nome: string } | null;
+  // ATUALIZADO: Incluímos o ID aqui
+  obra: { id: string; nome: string } | null;
   empresa_id?: string;
 }
 
@@ -117,7 +118,6 @@ export function LotesTable({
 
     return (
       <div className="flex items-center justify-end gap-2">
-        {/* Botão de Editar */}
         {onEdit && (lote.status === "concluido" || lote.status === "aguardando_reanalise") && (
           <Button
             size="icon"
@@ -130,13 +130,12 @@ export function LotesTable({
           </Button>
         )}
 
-        {/* Botão de Download */}
         {onDownload && (
           <Button
             size="icon"
             variant="ghost"
             onClick={() => onDownload(lote)}
-            title="Baixar Lista Padrão Seguradora"
+            title="Baixar Lista"
             className="text-muted-foreground hover:text-primary"
           >
             <FileDown className="h-4 w-4" />
