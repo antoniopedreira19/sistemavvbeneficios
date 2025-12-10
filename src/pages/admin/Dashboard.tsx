@@ -4,17 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-
-import {
   Building2,
   Wallet,
   DollarSign,
@@ -23,7 +12,7 @@ import {
   BarChart3,
   Filter,
   TrendingUp,
-  Trophy,
+  Trophy, // Ícone para o Top 5
   Activity,
   CheckCircle2,
 } from "lucide-react";
@@ -49,11 +38,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Cores para gráficos
 const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"];
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
-const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"];
+const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"]; // Tons de verde
 
 export default function Dashboard() {
   const [selectedCompetencia, setSelectedCompetencia] = useState<string>("");
-  const [showCompaniesModal, setShowCompaniesModal] = useState(false); // Novo estado do modal
 
   // 1. BUSCAR LISTA DE COMPETÊNCIAS
   const { data: competencias = [] } = useQuery({
@@ -86,6 +74,8 @@ export default function Dashboard() {
     queryKey: ["admin-dashboard-stats-v5", selectedCompetencia],
     enabled: !!selectedCompetencia,
     queryFn: async () => {
+      console.log("Buscando dados para:", selectedCompetencia);
+
       // A. Empresas Ativas (Total na Carteira)
       const { count: empresasAtivas } = await supabase
         .from("empresas")
@@ -100,7 +90,7 @@ export default function Dashboard() {
 
       const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
 
-      // C. Lotes do Mês Selecionado (COM JOIN DA EMPRESA e OBRA para o Top 5 e Modal)
+      // C. Lotes do Mês Selecionado (COM JOIN DA EMPRESA para o Top 5)
       const { data: lotesMes } = await supabase
         .from("lotes_mensais")
         .select(
@@ -111,8 +101,7 @@ export default function Dashboard() {
           total_colaboradores, 
           valor_total, 
           total_aprovados,
-          empresa:empresas(nome), 
-          obra:obras(nome)
+          empresa:empresas(nome) 
         `,
         )
         .eq("competencia", selectedCompetencia);
@@ -211,10 +200,12 @@ export default function Dashboard() {
 
   const evolutionChartData = Object.values(evolutionMap || {}).slice(-6) as any[];
 
-  // Top 5 Faturamento
+  // --- NOVO GRÁFICO: TOP 5 FATURAMENTO ---
+  // Agrupar lotes por empresa e somar valor
   const revenueByCompany: Record<string, number> = {};
   dashboardData?.lotesMes.forEach((lote: any) => {
     const nome = lote.empresa?.nome || "Desconhecida";
+    // Se não tiver valor_total salvo, estima (vidas * 50)
     const valor = Number(lote.valor_total) || Number(lote.total_colaboradores || 0) * 50;
     revenueByCompany[nome] = (revenueByCompany[nome] || 0) + valor;
   });
@@ -223,19 +214,6 @@ export default function Dashboard() {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 5);
-
-  // DADOS PARA O MODAL DE EMPRESAS POR MÊS
-  const companiesInMonthData =
-    dashboardData?.lotesMes.map((lote: any) => {
-      const vidas = lote.total_colaboradores || 0;
-      const faturamento = lote.valor_total || vidas * 50;
-      return {
-        empresa: lote.empresa?.nome || "Desconhecida",
-        obra: lote.obra?.nome || "Obra Principal",
-        vidas: vidas,
-        faturamento: faturamento,
-      };
-    }) || [];
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -275,15 +253,13 @@ export default function Dashboard() {
           description="Total na carteira"
         />
 
-        {/* 2. Empresas no Mês (CLICÁVEL) */}
+        {/* 2. Empresas no Mês */}
         <KpiCard
           title="Empresas no Mês"
           value={totalEmpresasNoMes}
           icon={CheckCircle2}
           description={`Enviaram em ${selectedCompetencia.split("/")[0]}`}
           iconColor="text-purple-600"
-          onClick={() => totalEmpresasNoMes > 0 && setShowCompaniesModal(true)} // Ação: Abre modal
-          className="cursor-pointer hover:shadow-lg transition-shadow"
         />
 
         {/* 3. Vidas no Mês */}
@@ -324,7 +300,7 @@ export default function Dashboard() {
               <TrendingUp className="h-5 w-5 text-primary" />
               Evolução Financeira & Vidas
             </CardTitle>
-            <CardDescription>Faturamento (Barras) vs Vidas (Linha)</CardDescription>
+            <CardDescription>Últimos 6 meses</CardDescription>
           </CardHeader>
           <CardContent className="pl-0">
             <div className="h-[300px] w-full">
@@ -340,20 +316,7 @@ export default function Dashboard() {
                     tickFormatter={(val) => `R$${val / 1000}k`}
                   />
                   <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
-                  {/* TOOLTIP CORRIGIDO */}
-                  <Tooltip
-                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                    formatter={(value: any, name: any) => {
-                      if (name === "Faturamento") {
-                        return [
-                          value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), // Formato BRL
-                          name,
-                        ];
-                      }
-                      return [value, name];
-                    }}
-                  />
-                  {/* FIM TOOLTIP CORRIGIDO */}
+                  <Tooltip />
                   <Legend />
                   <Bar
                     yAxisId="left"
@@ -378,7 +341,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Top 5 Faturamento (3 colunas) */}
+        {/* NOVO: Top 5 Faturamento (3 colunas) */}
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -507,67 +470,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* NOVO MODAL DE EMPRESAS POR MÊS */}
-      <CompaniesInMonthModal
-        open={showCompaniesModal}
-        onOpenChange={setShowCompaniesModal}
-        companiesData={companiesInMonthData}
-        competencia={selectedCompetencia}
-      />
     </div>
-  );
-}
-
-// --- Componente do Modal ---
-function CompaniesInMonthModal({ open, onOpenChange, companiesData, competencia }: any) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[750px] max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Empresas Ativas na Competência</DialogTitle>
-          <DialogDescription>Lista de todos os lotes processados em {competencia}.</DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Empresa</TableHead>
-                <TableHead>Obra</TableHead>
-                <TableHead className="text-center">Vidas</TableHead>
-                <TableHead className="text-right">Faturamento</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {companiesData.length > 0 ? (
-                companiesData.map((item: any, index: number) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{item.empresa}</TableCell>
-                    <TableCell>{item.obra}</TableCell>
-                    <TableCell className="text-center">{item.vidas}</TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.faturamento.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
-                    Nenhuma empresa encontrada.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Fechar</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -579,11 +482,9 @@ function KpiCard({
   description,
   highlight = false,
   iconColor = "text-muted-foreground",
-  onClick, // Recebe o handler
-  className = "",
 }: any) {
   return (
-    <Card className={cn(highlight ? "border-green-500 bg-green-50" : "", className)} onClick={onClick}>
+    <Card className={highlight ? "border-green-500 bg-green-50" : ""}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <Icon className={`h-4 w-4 ${highlight ? "text-green-600" : iconColor}`} />
