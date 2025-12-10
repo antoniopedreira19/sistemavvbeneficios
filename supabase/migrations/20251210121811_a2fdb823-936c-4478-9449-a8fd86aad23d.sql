@@ -1,0 +1,116 @@
+-- Corrigir função para criar nota fiscal apenas quando status for 'faturado', não 'concluido'
+
+CREATE OR REPLACE FUNCTION public.atualizar_totais_ao_concluir_lote()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_total_aprovados INTEGER;
+  v_valor_plano NUMERIC;
+  v_valor_total NUMERIC;
+  v_empresa_status empresa_status;
+BEGIN
+  -- Executa quando o status muda para 'concluido' OU 'faturado'
+  IF (NEW.status = 'concluido' AND (OLD.status IS NULL OR OLD.status != 'concluido')) OR
+     (NEW.status = 'faturado' AND (OLD.status IS NULL OR OLD.status != 'faturado')) THEN
+    
+    -- Conta TODOS os colaboradores aprovados em TODAS as tentativas deste lote
+    SELECT COUNT(*) INTO v_total_aprovados
+    FROM colaboradores_lote
+    WHERE lote_id = NEW.id
+      AND status_seguradora = 'aprovado';
+    
+    -- Busca o valor unitário do plano para este lote
+    SELECT COALESCE(valor, 0) INTO v_valor_plano
+    FROM precos_planos
+    WHERE lote_id = NEW.id
+    LIMIT 1;
+    
+    -- Calcula valor total: total_aprovados * valor_plano
+    v_valor_total := v_total_aprovados * COALESCE(v_valor_plano, 0);
+    
+    -- Se não houver preço cadastrado, usa o valor já calculado pelo frontend (R$50 fixo)
+    IF v_valor_plano IS NULL OR v_valor_plano = 0 THEN
+      v_valor_total := COALESCE(NEW.valor_total, v_total_aprovados * 50, 0);
+    END IF;
+    
+    -- Atualiza os campos no registro NEW que será salvo
+    NEW.total_aprovados := v_total_aprovados;
+    NEW.valor_total := v_valor_total;
+    NEW.updated_at := now();
+    
+    -- Busca status da empresa
+    SELECT status INTO v_empresa_status
+    FROM empresas
+    WHERE id = NEW.empresa_id;
+    
+    -- Cria apólice se empresa está em acolhimento (implementação) - apenas no concluido
+    IF NEW.status = 'concluido' AND v_empresa_status = 'acolhimento' THEN
+      INSERT INTO apolices (
+        empresa_id,
+        lote_id,
+        obra_id,
+        numero_vidas_enviado,
+        adendo_assinado,
+        codigo_enviado,
+        boas_vindas_enviado,
+        numero_vidas_adendo,
+        numero_vidas_vitalmed
+      )
+      VALUES (
+        NEW.empresa_id,
+        NEW.id,
+        NEW.obra_id,
+        v_total_aprovados,
+        false,
+        false,
+        false,
+        0,
+        0
+      )
+      ON CONFLICT (empresa_id, lote_id) 
+      DO UPDATE SET
+        numero_vidas_enviado = v_total_aprovados,
+        updated_at = now();
+    END IF;
+    
+    -- Cria nota fiscal APENAS quando status for 'faturado' (não mais no concluido)
+    IF NEW.status = 'faturado' THEN
+      INSERT INTO notas_fiscais (
+        empresa_id,
+        lote_id,
+        obra_id,
+        competencia,
+        numero_vidas,
+        valor_total,
+        nf_emitida
+      )
+      VALUES (
+        NEW.empresa_id,
+        NEW.id,
+        NEW.obra_id,
+        NEW.competencia,
+        v_total_aprovados,
+        COALESCE(v_valor_total, 0),
+        false
+      )
+      ON CONFLICT (empresa_id, lote_id) 
+      DO UPDATE SET
+        numero_vidas = v_total_aprovados,
+        valor_total = COALESCE(v_valor_total, 0),
+        updated_at = now();
+    END IF;
+    
+  END IF;
+  
+  RETURN NEW;
+END;
+$function$;
+
+-- Deletar a nota fiscal que foi criada indevidamente (empresa CAMPBEL)
+DELETE FROM notas_fiscais 
+WHERE lote_id IN (
+  SELECT id FROM lotes_mensais WHERE status = 'concluido'
+);
