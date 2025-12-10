@@ -228,12 +228,15 @@ export default function Dashboard() {
 
   // DADOS PARA O MODAL (Lista de empresas que enviaram)
   const companiesInMonthData =
-    dashboardData?.lotesMes.map((lote: any) => ({
-      empresa: lote.empresa?.nome || "Desconhecida",
-      obra: lote.obra?.nome || "Obra Principal",
-      vidas: lote.total_colaboradores || 0,
-      faturamento: Number(lote.valor_total) || Number(lote.total_colaboradores) * 50,
-    })) || [];
+    dashboardData?.lotesMes
+      .map((lote: any) => ({
+        empresa: lote.empresa?.nome || "Desconhecida",
+        obra: lote.obra?.nome || "Obra Principal",
+        vidas: lote.total_colaboradores || 0,
+        faturamento: Number(lote.valor_total) || Number(lote.total_colaboradores) * 50,
+      }))
+      // NOVO: Ordenar por nome da empresa (alfabético)
+      ?.sort((a, b) => a.empresa.localeCompare(b.empresa)) || [];
 
   if (isLoading) return <DashboardSkeleton />;
 
