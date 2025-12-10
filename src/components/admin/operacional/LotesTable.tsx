@@ -179,8 +179,10 @@ export function LotesTable({
           <TableBody>
             {lotes.map((lote) => (
               <TableRow key={lote.id}>
-                <TableCell className="font-medium">{lote.empresa?.nome || "-"}</TableCell>
-                <TableCell>{lote.obra?.nome || "Sem obra"}</TableCell>
+                {/* ATUALIZAÇÃO PARA MAIÚSCULAS */}
+                <TableCell className="font-medium">{lote.empresa?.nome?.toUpperCase() || "-"}</TableCell>
+                <TableCell>{lote.obra?.nome?.toUpperCase() || "SEM OBRA"}</TableCell>
+                {/* FIM ATUALIZAÇÃO */}
                 <TableCell>
                   <Badge variant="outline" className="font-mono">
                     {lote.competencia}
