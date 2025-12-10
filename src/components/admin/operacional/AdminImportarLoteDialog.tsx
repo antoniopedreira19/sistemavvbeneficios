@@ -61,24 +61,19 @@ const normalizarSexo = (valor: any): string => {
   return "Masculino";
 };
 
-// CORREÇÃO AQUI: Garante que apenas números e ponto decimal sejam mantidos
+// CORREÇÃO DE SALÁRIO: Lógica para tratar formatos BR e US
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
 
-  let str = String(valor);
+  let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
 
-  // 1. Remove pontos de milhar (apenas o último ponto conta como decimal se houver)
-  // 2. Substitui a vírgula por ponto (se for o separador decimal)
-  // 3. Remove R$ e espaços
-  str = str.replace(/R\$/g, "").replace(/\s/g, "");
-
-  // Se o valor for "1.500,00" -> 1500,00 -> 1500.00
-  // Se o valor for "1500.00" -> 1500.00
+  // Se houver vírgula, assume-se formato BR (milhar com ponto, decimal com vírgula)
   if (str.includes(",")) {
-    str = str.replace(/\./g, "").replace(",", ".");
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
   } else {
-    str = str.replace(/,/g, ""); // Remove vírgula se não for decimal (ex: 1,000 -> 1000)
+    str = str.replace(/,/g, "");
   }
 
   const num = parseFloat(str);
@@ -123,7 +118,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"selecao" | "upload" | "conclusao">("selecao");
 
-  const [empresas, setEmpresas] = useState<EmpresaComCNPJ[]>([]); // Usando a interface que inclui CNPJ
+  const [empresas, setEmpresas] = useState<EmpresaComCNPJ[]>([]);
   const [obras, setObras] = useState<{ id: string; nome: string }[]>([]);
 
   const [selectedEmpresa, setSelectedEmpresa] = useState("");
@@ -135,7 +130,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   useEffect(() => {
     if (open) {
-      // ATUALIZADO: Buscar CNPJ junto com o ID e Nome
       supabase
         .from("empresas")
         .select("id, nome, cnpj")
@@ -265,10 +259,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
 
         const cpfLimpoRaw = cpfRaw.replace(/\D/g, "");
-        // CORREÇÃO 1: Garante 11 dígitos, preenchendo com zeros à esquerda
+        // Garante 11 dígitos, preenchendo com zeros à esquerda
         const cpfLimpo = cpfLimpoRaw.padStart(11, "0");
 
-        // CORREÇÃO 2: Pular linhas se todos os campos essenciais estiverem vazios (linhas zeradas)
+        // Pular linhas se todos os campos essenciais estiverem vazios (linhas zeradas)
         if (!nome && cpfLimpo.length === 0 && salario === 0) continue;
 
         const erros: string[] = [];
@@ -299,11 +293,11 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // ORDENAÇÃO CORRIGIDA: Prioriza erro, depois a ordem original (linha)
+      // Ordenar erros primeiro
       processados.sort((a, b) => {
         if (a.status === "erro" && b.status === "valido") return -1;
         if (a.status === "valido" && b.status === "erro") return 1;
-        return a.linha - b.linha; // Mantém a ordem original das linhas
+        return a.linha - b.linha;
       });
 
       setColaboradores(processados);
