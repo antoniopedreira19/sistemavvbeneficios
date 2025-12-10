@@ -61,19 +61,31 @@ const normalizarSexo = (valor: any): string => {
   return "Masculino";
 };
 
-// CORREÇÃO DE SALÁRIO: Lógica para tratar formatos BR e US
+// --- CORREÇÃO ROBUSTA DE SALÁRIO ---
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
 
   let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
 
-  // Se houver vírgula, assume-se formato BR (milhar com ponto, decimal com vírgula)
-  if (str.includes(",")) {
-    str = str.replace(/\./g, "");
+  const lastComma = str.lastIndexOf(",");
+  const lastDot = str.lastIndexOf(".");
+
+  if (lastComma > -1 && lastDot > -1) {
+    // Tem AMBOS (ponto e vírgula)
+    if (lastDot > lastComma) {
+      // Ex: 2,781.52 (Formato US) -> Remove vírgula
+      str = str.replace(/,/g, "");
+    } else {
+      // Ex: 2.781,52 (Formato BR) -> Remove ponto, troca vírgula por ponto
+      str = str.replace(/\./g, "").replace(",", ".");
+    }
+  } else if (lastComma > -1) {
+    // Só tem vírgula (Ex: 2781,52) -> Troca por ponto
     str = str.replace(",", ".");
   } else {
-    str = str.replace(/,/g, "");
+    // Só tem ponto ou nenhum (Ex: 2781.52 ou 2781) -> Mantém
+    // (Nada a fazer)
   }
 
   const num = parseFloat(str);
@@ -213,6 +225,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
+        // raw: false para obter os valores formatados como string (ajuda em datas e valores monetários)
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: null }) as any[][];
         if (tempJson.length > 0) {
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
@@ -259,10 +272,8 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
 
         const cpfLimpoRaw = cpfRaw.replace(/\D/g, "");
-        // Garante 11 dígitos, preenchendo com zeros à esquerda
         const cpfLimpo = cpfLimpoRaw.padStart(11, "0");
 
-        // Pular linhas se todos os campos essenciais estiverem vazios (linhas zeradas)
         if (!nome && cpfLimpo.length === 0 && salario === 0) continue;
 
         const erros: string[] = [];
@@ -293,11 +304,12 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // Ordenar erros primeiro
+      // CORREÇÃO: Manter ordem original (linha) após separar erros?
+      // Ou melhor: Ordenar erros primeiro, depois pelo número da linha.
       processados.sort((a, b) => {
         if (a.status === "erro" && b.status === "valido") return -1;
         if (a.status === "valido" && b.status === "erro") return 1;
-        return a.linha - b.linha;
+        return a.linha - b.linha; // Mantém ordem original secundária
       });
 
       setColaboradores(processados);
@@ -310,40 +322,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
-  const handleDownloadLote = () => {
-    const validos = colaboradores.filter((c) => c.status === "valido");
-    if (validos.length === 0) {
-      toast.error("Não há dados válidos para baixar.");
-      return;
-    }
-
-    const currentEmpresa = empresas.find((e) => e.id === selectedEmpresa);
-    const empresaCNPJ = currentEmpresa?.cnpj ? currentEmpresa.cnpj.replace(/\D/g, "") : "00000000000000";
-
-    const dataToExport = validos.map((c) => ({
-      "NOME COMPLETO": c.nome,
-      SEXO: c.sexo,
-      CPF: c.cpf,
-      "DATA NASCIMENTO": c.data_nascimento,
-      SALARIO: c.salario,
-      "CLASSIFICACAO SALARIAL": c.classificacao_salario,
-      "CNPJ DA EMPRESA": empresaCNPJ,
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista Seguradora");
-
-    const empresaNomeLimpo = currentEmpresa?.nome.replace(/[^a-zA-Z0-9]/g, "") || "Lote";
-    const fileName = `LOTE_SEGURADORA_${empresaNomeLimpo}_${competencia.replace("/", "-")}.xlsx`;
-
-    XLSX.writeFile(workbook, fileName);
-
-    toast.success("Download iniciado.");
-  };
-
   const handleConfirmarImportacao = async () => {
-    // Filtra apenas válidos
     const validos = colaboradores.filter((c) => c.status === "valido");
     if (!selectedEmpresa || !selectedObra || validos.length === 0) return;
 
@@ -353,7 +332,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
-      // 1. Verificar/Criar Lote com status PROVISÓRIO ('aguardando_processamento')
+      // 1. Verificar/Criar Lote com status PROVISÓRIO
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
         .select("id")
@@ -364,7 +343,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       if (loteExistente) {
         loteIdCriado = loteExistente.id;
-        // Reseta lote existente para estado seguro
         await supabase
           .from("lotes_mensais")
           .update({
@@ -382,7 +360,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             empresa_id: selectedEmpresa,
             obra_id: selectedObra,
             competencia: competencia,
-            status: "aguardando_processamento", // Status seguro
+            status: "aguardando_processamento",
             total_colaboradores: validos.length,
             total_aprovados: 0,
             total_reprovados: 0,
@@ -675,7 +653,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
               </div>
 
               <div className="flex justify-between pt-4 border-t">
-                {/* BOTÃO CORRIGIDO: Trocar Arquivo */}
+                {/* BOTÃO RESTAURADO: Trocar Arquivo */}
                 <Button
                   variant="outline"
                   onClick={() => {
