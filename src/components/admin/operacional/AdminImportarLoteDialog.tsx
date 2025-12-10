@@ -24,6 +24,9 @@ import {
   CheckCircle2,
   Check,
   ChevronsUpDown,
+  X,
+  Save,
+  Pencil,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateCPF, formatCPF, formatCNPJ } from "@/lib/validators";
@@ -64,7 +67,10 @@ const normalizarSexo = (valor: any): string => {
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
-  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
+  if (str.includes(",")) {
+    str = str.replace(/\./g, "").replace(",", ".");
+  }
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
@@ -115,6 +121,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [competencia, setCompetencia] = useState("");
   const [openCombobox, setOpenCombobox] = useState(false);
 
+  // Estados para criação de obra personalizada
+  const [isCreatingObra, setIsCreatingObra] = useState(false);
+  const [newObraName, setNewObraName] = useState("");
+
   const [colaboradores, setColaboradores] = useState<ValidatedRow[]>([]);
 
   useEffect(() => {
@@ -142,50 +152,63 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         "Dezembro",
       ];
       setCompetencia(`${meses[data.getMonth()]}/${data.getFullYear()}`);
+
+      // Resetar estados ao abrir
+      setStep("selecao");
+      setIsCreatingObra(false);
+      setNewObraName("");
     }
   }, [open]);
 
   useEffect(() => {
     if (selectedEmpresa) {
+      setLoading(true); // Feedback visual rápido
       supabase
         .from("obras")
         .select("id, nome")
         .eq("empresa_id", selectedEmpresa)
         .eq("status", "ativa")
+        .order("nome")
         .then(({ data }) => {
           setObras(data || []);
+          setSelectedObra(""); // Limpa seleção anterior
+          setLoading(false);
         });
     } else {
       setObras([]);
     }
   }, [selectedEmpresa]);
 
+  // Modificado: Agora aceita o nome como parâmetro
   const createObraMutation = useMutation({
-    mutationFn: async () => {
-      const empresa = empresas.find((e) => e.id === selectedEmpresa);
-      if (!empresa) throw new Error("Empresa inválida");
+    mutationFn: async (nomeDaObra: string) => {
+      if (!nomeDaObra.trim()) throw new Error("Nome da obra é obrigatório.");
 
       const { data, error } = await supabase
         .from("obras")
         .insert({
-          nome: empresa.nome,
+          nome: nomeDaObra,
           empresa_id: selectedEmpresa,
           status: "ativa",
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505") throw new Error("Já existe uma obra com este nome nesta empresa.");
+        throw error;
+      }
       return data;
     },
     onSuccess: (newObra) => {
-      toast.success(`Obra "${newObra.nome}" criada com sucesso!`);
-      // Atualiza a lista e seleciona a nova obra
-      setObras((old) => [...old, newObra]);
+      toast.success(`Obra "${newObra.nome}" criada!`);
+      setObras((prev) => [...prev, newObra]);
       setSelectedObra(newObra.id);
+      setIsCreatingObra(false);
+      setNewObraName("");
     },
-    onError: (error) => {
-      toast.error("Erro ao criar obra: " + error.message);
+    onError: (error: any) => {
+      toast.error(error.message);
     },
   });
 
@@ -311,15 +334,14 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       "NOME COMPLETO": c.nome,
       SEXO: c.sexo,
       CPF: c.cpf,
-      "DATA NASCIMENTO": c.data_nascimento,
-      SALARIO: c.salario,
+      "DATA NASCIMENTO": c.data_nascimento.split("-").reverse().join("/"),
+      SALARIO: c.salario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
       "CLASSIFICACAO SALARIAL": c.classificacao_salario,
-      "CNPJ DA EMPRESA": empresaCNPJ,
+      "CNPJ DA EMPRESA": formatCNPJ(empresaCNPJ),
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
-    // Configura largura das colunas
     const wch = 37.11;
     worksheet["!cols"] = [{ wch }, { wch }, { wch }, { wch }, { wch }, { wch }, { wch }];
 
@@ -344,7 +366,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
-      // 1. Verificar/Criar Lote (Upsert)
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
         .select("id")
@@ -386,7 +407,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         loteIdCriado = novoLote.id;
       }
 
-      // 2. Processar em Batches
       const BATCH_SIZE = 100;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
@@ -429,7 +449,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         if (itemsError) throw itemsError;
       }
 
-      // 3. Finalizar Lote
       const { error: finalError } = await supabase
         .from("lotes_mensais")
         .update({
@@ -447,6 +466,8 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       setStep("selecao");
       setColaboradores([]);
+      setSelectedEmpresa("");
+      setSelectedObra("");
     } catch (error: any) {
       console.error(error);
       toast.error("Erro no processo: " + error.message);
@@ -522,41 +543,93 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
               {selectedEmpresa && (
                 <div className="space-y-2">
                   <Label>Obra / Filial</Label>
-                  {/* MODIFICADO: Sempre mostra o Select e o Botão de Adicionar */}
-                  <div className="flex gap-2">
-                    <Select value={selectedObra} onValueChange={setSelectedObra}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Selecione a obra..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[200px]">
-                        {obras.map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
-                            {o.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                      onClick={() => createObraMutation.mutate()}
-                      disabled={createObraMutation.isPending}
-                      title="Criar Obra Padrão"
-                    >
-                      {createObraMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                  {/* LÓGICA DE CRIAÇÃO OU SELEÇÃO DE OBRA */}
+                  {isCreatingObra ? (
+                    <div className="flex gap-2 items-end animate-in fade-in slide-in-from-left-2">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          placeholder="Nome da Nova Obra"
+                          value={newObraName}
+                          onChange={(e) => setNewObraName(e.target.value)}
+                          className="bg-white border-blue-300 focus-visible:ring-blue-500"
+                          autoFocus
+                        />
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setIsCreatingObra(false)}
+                        className="text-muted-foreground hover:text-red-500"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        className="bg-blue-600 hover:bg-blue-700"
+                        onClick={() => createObraMutation.mutate(newObraName)}
+                        disabled={!newObraName.trim() || createObraMutation.isPending}
+                      >
+                        {createObraMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      {obras.length > 0 ? (
+                        <Select value={selectedObra} onValueChange={setSelectedObra}>
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Selecione a obra..." />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[200px]">
+                            {obras.map((o) => (
+                              <SelectItem key={o.id} value={o.id}>
+                                {o.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
-                        <Plus className="h-4 w-4" />
+                        <div className="flex-1 border border-dashed border-yellow-300 bg-yellow-50 rounded-md p-2 text-center text-sm text-yellow-800 flex items-center justify-center gap-2">
+                          <AlertTriangle className="h-4 w-4" /> Nenhuma obra encontrada.
+                        </div>
                       )}
-                    </Button>
-                  </div>
-                  {obras.length === 0 && !loading && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Nenhuma obra encontrada. Clique no + para criar a obra padrão.
-                    </p>
+
+                      <div className="flex gap-1">
+                        {obras.length === 0 && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="whitespace-nowrap"
+                            onClick={() =>
+                              createObraMutation.mutate(
+                                empresas.find((e) => e.id === selectedEmpresa)?.nome || "Obra Padrão",
+                              )
+                            }
+                            disabled={createObraMutation.isPending}
+                            title="Criar com Nome da Empresa"
+                          >
+                            {createObraMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Padrão"}
+                          </Button>
+                        )}
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            setNewObraName("");
+                            setIsCreatingObra(true);
+                          }}
+                          title="Criar Nova Obra Personalizada"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -580,7 +653,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             </div>
           )}
 
-          {/* ... Resto do código (upload, conclusão) permanece igual ao anterior corrigido */}
           {step === "upload" && (
             <div className="space-y-4 animate-in fade-in text-center">
               <div
@@ -652,12 +724,18 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
+                    {colaboradores.length > 200 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 200} linhas.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
-                {/* BOTÃO CORRIGIDO: Trocar Arquivo */}
                 <Button
                   variant="outline"
                   onClick={() => {
