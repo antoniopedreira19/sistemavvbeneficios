@@ -1,5 +1,3 @@
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,11 +5,10 @@ import {
   Pagination,
   PaginationContent,
   PaginationItem,
-  PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, RotateCcw } from "lucide-react";
+import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, RotateCcw, FileDown } from "lucide-react";
 
 export interface LoteOperacional {
   id: string;
@@ -21,8 +18,9 @@ export interface LoteOperacional {
   valor_total: number | null;
   created_at: string;
   status: string;
-  empresa: { nome: string } | null;
+  empresa: { nome: string; cnpj?: string } | null; // Adicionado cnpj opcional na tipagem
   obra: { nome: string } | null;
+  empresa_id?: string; // Útil para buscar dados
 }
 
 interface LotesTableProps {
@@ -31,9 +29,9 @@ interface LotesTableProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
-  // Adicionamos 'reanalise' aqui
   actionType: "enviar" | "processar" | "pendencia" | "faturar" | "reanalise";
   onAction: (lote: LoteOperacional) => void;
+  onDownload?: (lote: LoteOperacional) => void; // Nova prop
   actionLoading?: string | null;
 }
 
@@ -45,13 +43,14 @@ export function LotesTable({
   onPageChange,
   actionType,
   onAction,
+  onDownload, // Recebe a função
   actionLoading,
 }: LotesTableProps) {
   const getActionButton = (lote: LoteOperacional) => {
     const isActionLoading = actionLoading === lote.id;
 
-    // Determinar ação interna baseado no tipo e status do lote
-    const getInternalAction = (): "enviar" | "processar" | "pendencia" | "faturar" | "enviar_reanalise" => {
+    // Lógica interna de status
+    const getInternalAction = () => {
       if (actionType === "reanalise") {
         if (lote.status === "aguardando_reanalise") return "enviar_reanalise";
         if (lote.status === "em_reanalise") return "processar";
@@ -62,16 +61,19 @@ export function LotesTable({
 
     const currentAction = getInternalAction();
 
+    let MainButton = null;
+
     switch (currentAction) {
       case "enviar":
-        return (
+        MainButton = (
           <Button size="sm" onClick={() => onAction(lote)} disabled={isActionLoading}>
             {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
             Enviar
           </Button>
         );
-      case "enviar_reanalise": // Novo caso visual
-        return (
+        break;
+      case "enviar_reanalise":
+        MainButton = (
           <Button
             size="sm"
             className="bg-orange-600 hover:bg-orange-700"
@@ -82,15 +84,17 @@ export function LotesTable({
             Reenviar
           </Button>
         );
+        break;
       case "processar":
-        return (
+        MainButton = (
           <Button size="sm" variant="secondary" onClick={() => onAction(lote)} disabled={isActionLoading}>
             {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck className="h-4 w-4 mr-1" />}
             Processar
           </Button>
         );
+        break;
       case "pendencia":
-        return (
+        MainButton = (
           <Button size="sm" variant="outline" onClick={() => onAction(lote)} disabled={isActionLoading}>
             {isActionLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -100,33 +104,48 @@ export function LotesTable({
             Cobrar
           </Button>
         );
+        break;
       case "faturar":
-        return (
+        MainButton = (
           <Button size="sm" variant="default" onClick={() => onAction(lote)} disabled={isActionLoading}>
             {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4 mr-1" />}
             Faturar
           </Button>
         );
-      default:
-        return null;
+        break;
     }
+
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {/* Botão de Download (Sempre visível se a função for passada) */}
+        {onDownload && (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onDownload(lote)}
+            title="Baixar Lista Padrão Seguradora"
+            className="text-muted-foreground hover:text-primary"
+          >
+            <FileDown className="h-4 w-4" />
+          </Button>
+        )}
+        {MainButton}
+      </div>
+    );
   };
 
-  if (isLoading) {
+  if (isLoading)
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
-  }
-
-  if (lotes.length === 0) {
+  if (lotes.length === 0)
     return (
       <div className="text-center py-12 text-muted-foreground border rounded-lg bg-muted/10">
         Nenhum lote encontrado nesta etapa.
       </div>
     );
-  }
 
   return (
     <div className="space-y-4">
@@ -138,7 +157,6 @@ export function LotesTable({
               <TableHead>Obra</TableHead>
               <TableHead>Competência</TableHead>
               <TableHead className="text-center">Vidas</TableHead>
-              {/* Mostra coluna de Reprovados se for pendência ou reanálise */}
               {(actionType === "pendencia" || actionType === "reanalise") && (
                 <TableHead className="text-center">Reprovados</TableHead>
               )}
@@ -149,11 +167,7 @@ export function LotesTable({
           <TableBody>
             {lotes.map((lote) => (
               <TableRow key={lote.id}>
-                <TableCell className="font-medium">
-                  <div className="flex flex-col gap-1">
-                    <span>{lote.empresa?.nome || "-"}</span>
-                  </div>
-                </TableCell>
+                <TableCell className="font-medium">{lote.empresa?.nome || "-"}</TableCell>
                 <TableCell>{lote.obra?.nome || "Sem obra"}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="font-mono">
@@ -161,17 +175,12 @@ export function LotesTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center">{lote.total_colaboradores || 0}</TableCell>
-
                 {(actionType === "pendencia" || actionType === "reanalise") && (
                   <TableCell className="text-center">
-                    <Badge variant="destructive" className="font-bold">
-                      {lote.total_reprovados || 0}
-                    </Badge>
+                    <Badge variant="destructive">{lote.total_reprovados || 0}</Badge>
                   </TableCell>
                 )}
-
                 <TableCell className="text-center text-xs">
-                  {/* Badge Visual Dinâmico */}
                   {lote.status === "aguardando_reanalise" && (
                     <Badge variant="outline" className="border-orange-400 text-orange-600">
                       Aguardando Reanálise
@@ -185,15 +194,15 @@ export function LotesTable({
                   {lote.status === "com_pendencia" && <Badge variant="destructive">Pendente</Badge>}
                   {lote.status === "aguardando_processamento" && <Badge variant="secondary">Novo</Badge>}
                   {lote.status === "em_analise_seguradora" && <Badge variant="secondary">Na Seguradora</Badge>}
+                  {lote.status === "concluido" && <Badge className="bg-green-600">Concluído</Badge>}
+                  {lote.status === "faturado" && <Badge className="bg-blue-600">Faturado</Badge>}
                 </TableCell>
-
                 <TableCell className="text-right">{getActionButton(lote)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-
       {totalPages > 1 && (
         <Pagination>
           <PaginationContent>
