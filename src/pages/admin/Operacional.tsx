@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
+import ExcelJS from "exceljs";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -41,10 +42,10 @@ export default function Operacional() {
   const [confirmEnviarDialog, setConfirmEnviarDialog] = useState(false);
   const [confirmFaturarDialog, setConfirmFaturarDialog] = useState(false);
   const [processarDialogOpen, setProcessarDialogOpen] = useState(false);
-  const [importarDialogOpen, setImportarDialogOpen] = useState(false); // NOVO
+  const [importarDialogOpen, setImportarDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // --- QUERY INTELIGENTE ---
+  // --- QUERY ---
   const { data: lotes = [], isLoading } = useQuery({
     queryKey: ["lotes-operacional"],
     queryFn: async () => {
@@ -52,8 +53,8 @@ export default function Operacional() {
         .from("lotes_mensais")
         .select(
           `
-          id, competencia, total_colaboradores, total_reprovados, total_aprovados, valor_total, created_at, status, 
-          empresa:empresas(nome),
+          id, competencia, total_colaboradores, total_reprovados, total_aprovados, valor_total, created_at, status, empresa_id,
+          empresa:empresas(nome, cnpj),
           obra:obras(nome)
         `,
         )
@@ -64,6 +65,7 @@ export default function Operacional() {
           "aguardando_reanalise",
           "em_reanalise",
           "concluido",
+          "faturado",
         ])
         .order("created_at", { ascending: false });
 
@@ -72,7 +74,6 @@ export default function Operacional() {
     },
   });
 
-  // --- FILTRAGEM RÍGIDA ---
   const getLotesByTab = (tab: TabType) => {
     switch (tab) {
       case "entrada":
@@ -84,14 +85,13 @@ export default function Operacional() {
       case "reanalise":
         return lotes.filter((l) => ["aguardando_reanalise", "em_reanalise"].includes(l.status));
       case "concluido":
-        return lotes.filter((l) => l.status === "concluido");
+        return lotes.filter((l) => ["concluido", "faturado"].includes(l.status));
       default:
         return [];
     }
   };
 
   // --- MUTAÇÕES ---
-
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -103,7 +103,7 @@ export default function Operacional() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      toast.success("Enviado para Seguradora (Novo)");
+      toast.success("Enviado para Seguradora");
       setConfirmEnviarDialog(false);
       setActionLoading(null);
       setSelectedLote(null);
@@ -125,7 +125,7 @@ export default function Operacional() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      toast.success("Enviado para 2ª Análise (Reenvio)");
+      toast.success("Reenviado para análise");
       setConfirmEnviarDialog(false);
       setActionLoading(null);
       setSelectedLote(null);
@@ -139,23 +139,17 @@ export default function Operacional() {
   const faturarMutation = useMutation({
     mutationFn: async (lote: LoteOperacional) => {
       setActionLoading(lote.id);
-
-      const vidasAprovadas = (lote.total_colaboradores || 0) - (lote.total_reprovados || 0);
-      const valorCalculado = vidasAprovadas * 50;
-
+      const vidas = (lote.total_colaboradores || 0) - (lote.total_reprovados || 0);
+      const valor = vidas * 50;
       const { error } = await supabase
         .from("lotes_mensais")
-        .update({
-          status: "faturado",
-          valor_total: valorCalculado,
-        })
+        .update({ status: "faturado", valor_total: valor })
         .eq("id", lote.id);
-
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      toast.success("Lote faturado e Nota Fiscal gerada!");
+      toast.success("Faturado com sucesso!");
       setConfirmFaturarDialog(false);
       setActionLoading(null);
       setSelectedLote(null);
@@ -166,32 +160,103 @@ export default function Operacional() {
     },
   });
 
-  // --- HANDLERS ---
+  // --- DOWNLOAD PADRÃO SEGURADORA (ExcelJS) ---
+  const handleDownloadLote = async (lote: LoteOperacional) => {
+    try {
+      toast.info("Gerando arquivo...");
 
+      // 1. Buscar Colaboradores do Lote
+      const { data: itens, error } = await supabase
+        .from("colaboradores_lote")
+        .select("*")
+        .eq("lote_id", lote.id)
+        .eq("status_seguradora", "aprovado"); // Apenas aprovados? Ou todos? Geralmente envio é todos válidos.
+
+      if (error) throw error;
+      if (!itens || itens.length === 0) {
+        toast.warning("Lote sem colaboradores para baixar.");
+        return;
+      }
+
+      // 2. Buscar CNPJ se não veio na listagem inicial
+      let cnpj = (lote.empresa as any)?.cnpj || "";
+      if (!cnpj && lote.empresa_id) {
+        const { data: emp } = await supabase.from("empresas").select("cnpj").eq("id", lote.empresa_id).single();
+        if (emp) cnpj = emp.cnpj;
+      }
+      cnpj = cnpj.replace(/\D/g, "");
+
+      // 3. Gerar Excel com ExcelJS (Estilizado)
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Lista Seguradora");
+
+      // Cabeçalho
+      const headers = [
+        "NOME COMPLETO",
+        "SEXO",
+        "CPF",
+        "DATA NASCIMENTO",
+        "SALARIO",
+        "CLASSIFICACAO SALARIAL",
+        "CNPJ DA EMPRESA",
+      ];
+      const headerRow = worksheet.addRow(headers);
+
+      // Estilo do Cabeçalho (#203455 + Texto Branco)
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF203455" }, // Azul Escuro
+        };
+        cell.font = {
+          color: { argb: "FFFFFFFF" }, // Branco
+          bold: true,
+        };
+        cell.alignment = { horizontal: "center" };
+      });
+
+      // Largura das Colunas (37.11)
+      worksheet.columns = headers.map(() => ({ width: 37.11 }));
+
+      // Dados
+      itens.forEach((c) => {
+        worksheet.addRow([c.nome, c.sexo, c.cpf, c.data_nascimento, c.salario, c.classificacao_salario, cnpj]);
+      });
+
+      // Download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SEGURADORA_${lote.empresa?.nome}_${lote.competencia.replace("/", "-")}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Download concluído.");
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Erro ao gerar arquivo: " + e.message);
+    }
+  };
+
+  // --- ACTION ROUTER ---
   const handleAction = (lote: LoteOperacional, tab: string) => {
     setSelectedLote(lote);
-
-    if (tab === "entrada") {
-      setConfirmEnviarDialog(true);
-    } else if (tab === "reanalise") {
+    if (tab === "entrada") setConfirmEnviarDialog(true);
+    else if (tab === "reanalise") {
       if (lote.status === "aguardando_reanalise") setConfirmEnviarDialog(true);
-      else if (lote.status === "em_reanalise") setProcessarDialogOpen(true);
-    } else if (tab === "seguradora") {
-      setProcessarDialogOpen(true);
-    } else if (tab === "concluido") {
-      setConfirmFaturarDialog(true);
-    } else if (tab === "pendencia") {
-      toast.success("Mensagem de cobrança enviada.");
-    }
+      else setProcessarDialogOpen(true);
+    } else if (tab === "seguradora") setProcessarDialogOpen(true);
+    else if (tab === "concluido") setConfirmFaturarDialog(true);
+    else if (tab === "pendencia") toast.success("Cobrança enviada.");
   };
 
   const handleConfirmarEnvio = () => {
     if (!selectedLote) return;
-    if (selectedLote.status === "aguardando_reanalise") {
-      reenviarReanaliseMutation.mutate(selectedLote.id);
-    } else {
-      enviarNovoMutation.mutate(selectedLote.id);
-    }
+    if (selectedLote.status === "aguardando_reanalise") reenviarReanaliseMutation.mutate(selectedLote.id);
+    else enviarNovoMutation.mutate(selectedLote.id);
   };
 
   const getPaginatedLotes = (tab: TabType) => {
@@ -200,7 +265,6 @@ export default function Operacional() {
     const start = (page - 1) * ITEMS_PER_PAGE;
     return data.slice(start, start + ITEMS_PER_PAGE);
   };
-
   const getTotalPages = (tab: TabType) => Math.ceil(getLotesByTab(tab).length / ITEMS_PER_PAGE);
 
   return (
@@ -213,11 +277,8 @@ export default function Operacional() {
             <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
           </div>
         </div>
-
-        {/* BOTÃO DE IMPORTAÇÃO (NOVO) */}
         <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
-          <Upload className="mr-2 h-4 w-4" />
-          Importar Lote Pronto
+          <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
         </Button>
       </div>
 
@@ -259,6 +320,7 @@ export default function Operacional() {
           actionLoading,
           "enviar",
           getTotalPages,
+          handleDownloadLote,
         )}
         {renderTabContent(
           "seguradora",
@@ -271,6 +333,7 @@ export default function Operacional() {
           actionLoading,
           "processar",
           getTotalPages,
+          handleDownloadLote,
         )}
         {renderTabContent(
           "pendencia",
@@ -283,6 +346,7 @@ export default function Operacional() {
           actionLoading,
           "pendencia",
           getTotalPages,
+          handleDownloadLote,
         )}
         {renderTabContent(
           "reanalise",
@@ -295,6 +359,7 @@ export default function Operacional() {
           actionLoading,
           "reanalise",
           getTotalPages,
+          handleDownloadLote,
         )}
         {renderTabContent(
           "concluido",
@@ -307,10 +372,10 @@ export default function Operacional() {
           actionLoading,
           "faturar",
           getTotalPages,
+          handleDownloadLote,
         )}
       </Tabs>
 
-      {/* DIALOGS */}
       <AlertDialog open={confirmEnviarDialog} onOpenChange={setConfirmEnviarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -319,7 +384,7 @@ export default function Operacional() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {selectedLote?.status === "aguardando_reanalise"
-                ? "O lote corrigido será enviado para a fila de 'Em Reanálise'."
+                ? "O lote corrigido será enviado para seguradora."
                 : "O lote será enviado para análise inicial da seguradora."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -335,9 +400,7 @@ export default function Operacional() {
           <AlertDialogHeader>
             <AlertDialogTitle>Liberar Faturamento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso irá gerar a NF para o lote de <strong>{selectedLote?.empresa.nome}</strong>.
-              <br />
-              Valor estimado:{" "}
+              Isso irá gerar a NF. Valor estimado:{" "}
               <strong>R$ {((selectedLote?.total_colaboradores || 0) * 50).toLocaleString("pt-BR")}</strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -350,7 +413,6 @@ export default function Operacional() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* MODAL IMPORTAR LOTE (NOVO) */}
       <AdminImportarLoteDialog open={importarDialogOpen} onOpenChange={setImportarDialogOpen} />
 
       {selectedLote && (
@@ -366,7 +428,6 @@ export default function Operacional() {
   );
 }
 
-// Helpers Visuais
 const TabTriggerItem = ({ id, label, icon: Icon, count, variant = "secondary" }: any) => (
   <TabsTrigger value={id} className="flex items-center gap-2">
     <Icon className="h-4 w-4" /> {label}
@@ -398,6 +459,7 @@ function renderTabContent(
   actionLoading: any,
   actionType: any,
   getTotal: any,
+  onDownload: any,
 ) {
   return (
     <TabsContent value={value} className="mt-6">
@@ -409,8 +471,9 @@ function renderTabContent(
           totalPages={getTotal(value)}
           onPageChange={(p: number) => setPages((prev: any) => ({ ...prev, [value]: p }))}
           actionType={actionType}
-          onAction={(l: LoteOperacional) => handleAction(l, value)}
+          onAction={(l: any) => handleAction(l, value)}
           actionLoading={actionLoading}
+          onDownload={onDownload} // Passando a função de download
         />
       </TabCard>
     </TabsContent>
