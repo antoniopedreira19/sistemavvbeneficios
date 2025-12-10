@@ -12,8 +12,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import das Tabs
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils"; // CORREÇÃO: Import necessário para classes condicionais
+import { Badge } from "@/components/ui/badge"; // Import do Badge
+import { cn } from "@/lib/utils";
 
 import {
   Building2,
@@ -26,6 +28,7 @@ import {
   TrendingUp,
   Trophy,
   CheckCircle2,
+  AlertCircle, // Ícone para pendentes
 } from "lucide-react";
 import {
   ComposedChart,
@@ -53,7 +56,7 @@ const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"];
 
 export default function Dashboard() {
   const [selectedCompetencia, setSelectedCompetencia] = useState<string>("");
-  const [showCompaniesModal, setShowCompaniesModal] = useState(false); // Novo estado do modal
+  const [showCompaniesModal, setShowCompaniesModal] = useState(false);
 
   // 1. BUSCAR LISTA DE COMPETÊNCIAS
   const { data: competencias = [] } = useQuery({
@@ -83,7 +86,7 @@ export default function Dashboard() {
 
   // 2. QUERY PRINCIPAL
   const { data: dashboardData, isLoading } = useQuery({
-    queryKey: ["admin-dashboard-stats-v5", selectedCompetencia],
+    queryKey: ["admin-dashboard-stats-v6", selectedCompetencia], // Atualizei a key
     enabled: !!selectedCompetencia,
     queryFn: async () => {
       console.log("Buscando dados para:", selectedCompetencia);
@@ -102,7 +105,7 @@ export default function Dashboard() {
 
       const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
 
-      // C. Lotes do Mês Selecionado (Com JOIN de Empresa e Obra)
+      // C. Lotes do Mês Selecionado
       const { data: lotesMes } = await supabase
         .from("lotes_mensais")
         .select(
@@ -141,6 +144,14 @@ export default function Dashboard() {
         .select("competencia, total_colaboradores, valor_total, created_at")
         .order("created_at", { ascending: true });
 
+      // G. TODAS AS EMPRESAS ATIVAS (Para calcular pendentes)
+      // Buscamos ID, Nome e contamos os colaboradores ativos de cada uma
+      const { data: allActiveCompanies } = await supabase
+        .from("empresas")
+        .select("id, nome, colaboradores(count)")
+        .eq("status", "ativa")
+        .eq("colaboradores.status", "ativo");
+
       return {
         empresasAtivas: empresasAtivas || 0,
         faturamentoEsperado,
@@ -149,6 +160,7 @@ export default function Dashboard() {
         colaboradores: colaboradoresDetalhados,
         notasMes: notasMes || [],
         historicoLotes: historicoLotes || [],
+        allActiveCompanies: allActiveCompanies || [],
       };
     },
   });
@@ -226,18 +238,35 @@ export default function Dashboard() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 5);
 
-  // DADOS PARA O MODAL (Lista de empresas que enviaram)
-  const companiesInMonthData =
+  // --- PREPARAÇÃO DE DADOS PARA O MODAL ---
+
+  // 1. Quem já enviou (Lotes no Mês)
+  const companiesSentIds = new Set(dashboardData?.lotesMes.map((l) => l.empresa_id));
+
+  const companiesSentData =
     dashboardData?.lotesMes
       .map((lote: any) => ({
-        // APLICAÇÃO DO UPPERCASE AQUI:
         empresa: lote.empresa?.nome.toUpperCase() || "DESCONHECIDA",
         obra: lote.obra?.nome.toUpperCase() || "OBRA PRINCIPAL",
-        // FIM APLICAÇÃO DO UPPERCASE
         vidas: lote.total_colaboradores || 0,
         faturamento: Number(lote.valor_total) || Number(lote.total_colaboradores) * 50,
       }))
-      ?.sort((a, b) => a.empresa.localeCompare(b.empresa)) || [];
+      .sort((a, b) => a.empresa.localeCompare(b.empresa)) || [];
+
+  // 2. Quem FALTA enviar (Pendentes)
+  const companiesPendingData =
+    dashboardData?.allActiveCompanies
+      .filter((empresa: any) => !companiesSentIds.has(empresa.id)) // Remove quem já enviou
+      .map((empresa: any) => {
+        // Supabase retorna count em array [{count: X}]
+        const vidasAtivas = empresa.colaboradores?.[0]?.count || 0;
+        return {
+          empresa: empresa.nome.toUpperCase(),
+          vidas: vidasAtivas,
+          previsao_faturamento: vidasAtivas * 50,
+        };
+      })
+      .sort((a, b) => a.empresa.localeCompare(b.empresa)) || [];
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -269,7 +298,6 @@ export default function Dashboard() {
 
       {/* KPI CARDS */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {/* 1. Empresas Ativas (Global) */}
         <KpiCard
           title="Empresas Ativas"
           value={dashboardData?.empresasAtivas}
@@ -277,7 +305,7 @@ export default function Dashboard() {
           description="Total na carteira"
         />
 
-        {/* 2. Empresas no Mês (CLICÁVEL) */}
+        {/* CARD CLICÁVEL COM NOVA LÓGICA NO MODAL */}
         <KpiCard
           title="Empresas no Mês"
           value={totalEmpresasNoMes}
@@ -285,10 +313,9 @@ export default function Dashboard() {
           description={`Enviaram em ${selectedCompetencia.split("/")[0]}`}
           iconColor="text-purple-600"
           className="cursor-pointer hover:shadow-md transition-shadow active:scale-95"
-          onClick={() => totalEmpresasNoMes > 0 && setShowCompaniesModal(true)} // Abre o Modal
+          onClick={() => setShowCompaniesModal(true)}
         />
 
-        {/* 3. Vidas no Mês */}
         <KpiCard
           title="Vidas no Mês"
           value={totalVidasMes}
@@ -297,7 +324,6 @@ export default function Dashboard() {
           iconColor="text-orange-600"
         />
 
-        {/* 4. Faturamento Esperado (Global) */}
         <KpiCard
           title="Faturamento Esperado"
           value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
@@ -306,7 +332,6 @@ export default function Dashboard() {
           iconColor="text-blue-600"
         />
 
-        {/* 5. Faturamento Real (Mês) */}
         <KpiCard
           title="Faturamento Real"
           value={`R$ ${faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
@@ -319,7 +344,6 @@ export default function Dashboard() {
 
       {/* GRÁFICOS */}
       <div className="grid gap-4 md:grid-cols-7">
-        {/* Evolução Financeira */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -342,8 +366,6 @@ export default function Dashboard() {
                     tickFormatter={(val) => `R$${val / 1000}k`}
                   />
                   <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
-
-                  {/* TOOLTIP FORMATADO */}
                   <Tooltip
                     contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
                     formatter={(value: any, name: any) => {
@@ -352,7 +374,6 @@ export default function Dashboard() {
                       return [value, name];
                     }}
                   />
-
                   <Legend />
                   <Bar
                     yAxisId="left"
@@ -377,7 +398,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Top 5 */}
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -424,7 +444,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {/* Gênero */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -461,7 +480,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Faixa Salarial */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -502,15 +520,43 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* NOVO MODAL: LISTA DE EMPRESAS QUE ENVIARAM */}
-      <Dialog open={showCompaniesModal} onOpenChange={setShowCompaniesModal}>
-        <DialogContent className="sm:max-w-[750px] max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Empresas na Competência: {selectedCompetencia}</DialogTitle>
-            <DialogDescription>Detalhamento dos envios processados.</DialogDescription>
-          </DialogHeader>
+      {/* MODAL DE EMPRESAS ATUALIZADO */}
+      <CompaniesInMonthModal
+        open={showCompaniesModal}
+        onOpenChange={setShowCompaniesModal}
+        sentData={companiesSentData}
+        pendingData={companiesPendingData}
+        competencia={selectedCompetencia}
+      />
+    </div>
+  );
+}
 
-          <div className="flex-1 overflow-y-auto border rounded-md">
+// --- NOVO COMPONENTE DO MODAL COM ABAS ---
+function CompaniesInMonthModal({ open, onOpenChange, sentData, pendingData, competencia }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Relatório de Envio: {competencia}</DialogTitle>
+          <DialogDescription>Acompanhe quem já enviou e quem ainda está pendente.</DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue="enviados" className="flex-1 overflow-hidden flex flex-col">
+          <TabsList className="grid w-full grid-cols-2 mb-2">
+            <TabsTrigger
+              value="enviados"
+              className="data-[state=active]:bg-green-100 data-[state=active]:text-green-800"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" /> Enviaram ({sentData.length})
+            </TabsTrigger>
+            <TabsTrigger value="pendentes" className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800">
+              <AlertCircle className="h-4 w-4 mr-2" /> Pendentes ({pendingData.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ABA ENVIADOS */}
+          <TabsContent value="enviados" className="flex-1 overflow-y-auto border rounded-md p-0 m-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -521,28 +567,76 @@ export default function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {companiesInMonthData.map((item: any, idx: number) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-medium">{item.empresa}</TableCell>
-                    <TableCell className="text-muted-foreground">{item.obra}</TableCell>
-                    <TableCell className="text-center">
-                      <span className="font-bold">{item.vidas}</span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {item.faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                {sentData.length > 0 ? (
+                  sentData.map((item: any, idx: number) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-medium">{item.empresa}</TableCell>
+                      <TableCell className="text-muted-foreground">{item.obra}</TableCell>
+                      <TableCell className="text-center">
+                        <span className="font-bold text-green-600">{item.vidas}</span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {item.faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      Nenhuma empresa enviou nesta competência ainda.
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
-          </div>
+          </TabsContent>
 
-          <DialogFooter>
-            <Button onClick={() => setShowCompaniesModal(false)}>Fechar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          {/* ABA PENDENTES */}
+          <TabsContent value="pendentes" className="flex-1 overflow-y-auto border rounded-md p-0 m-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empresa</TableHead>
+                  <TableHead className="text-center">Vidas Importadas</TableHead>
+                  <TableHead className="text-right">Previsão Faturamento</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingData.length > 0 ? (
+                  pendingData.map((item: any, idx: number) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-medium text-red-700">{item.empresa}</TableCell>
+                      <TableCell className="text-center">
+                        {item.vidas > 0 ? (
+                          <span className="font-bold">{item.vidas}</span>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Sem dados
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {item.previsao_faturamento.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                      Todas as empresas ativas já enviaram! 🎉
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
