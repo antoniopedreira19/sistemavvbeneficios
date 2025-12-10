@@ -184,10 +184,10 @@ export function LotesTable({
                 <TableCell className="text-center text-xs">
                   {lote.status === "aguardando_processamento" && <Badge variant="secondary">Novo</Badge>}
                   {lote.status === "em_analise_seguradora" && <Badge variant="secondary">Na Seguradora</Badge>}
-                  {lote.status === "concluido" && (lote.total_reprovados || 0) > 0 && (
-                    <Badge className="bg-orange-500">Com Pendências</Badge>
+                  {lote.status === "com_pendencia" && (
+                    <Badge className="bg-orange-500">Pendência</Badge>
                   )}
-                  {lote.status === "concluido" && (lote.total_reprovados || 0) === 0 && (
+                  {lote.status === "concluido" && (
                     <Badge className="bg-green-600">Concluído</Badge>
                   )}
                   {lote.status === "faturado" && <Badge className="bg-blue-600">Faturado</Badge>}
