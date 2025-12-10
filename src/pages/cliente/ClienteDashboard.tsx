@@ -219,6 +219,8 @@ const ClienteDashboard = () => {
   const obrasComStatus = obras?.map(obra => {
     const lote = lotesAtuais?.find(l => l.obra_id === obra.id);
     const jaEnviado = lote && lote.status !== "rascunho";
+    // Pendência agora é identificada por status concluido + total_reprovados > 0
+    const temPendencia = lote?.status === "concluido" && (lote?.total_reprovados || 0) > 0;
     
     return {
       ...obra,
@@ -226,7 +228,8 @@ const ClienteDashboard = () => {
       totalVidas: obra.totalColaboradores || 0,
       status: lote?.status || null,
       temLista: (obra.totalColaboradores || 0) > 0,
-      jaEnviado
+      jaEnviado,
+      temPendencia
     };
   }) || [];
 
@@ -333,7 +336,11 @@ const ClienteDashboard = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, totalReprovados?: number) => {
+    // Concluído com pendências
+    if (status === "concluido" && (totalReprovados || 0) > 0) {
+      return <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20">Com Pendências</Badge>;
+    }
     switch (status) {
       case "concluido":
         return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Concluído</Badge>;
@@ -343,12 +350,6 @@ const ClienteDashboard = () => {
         return <Badge className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20">Aguardando Processamento</Badge>;
       case "em_analise_seguradora":
         return <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/20">Em Análise</Badge>;
-      case "em_reanalise":
-        return <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/20">Em Reanálise</Badge>;
-      case "aguardando_reanalise":
-        return <Badge className="bg-orange-500/10 text-orange-600 border-orange-500/20">Aguardando Reanálise</Badge>;
-      case "com_pendencia":
-        return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Com Pendência</Badge>;
       case "rascunho":
         return <Badge className="bg-gray-500/10 text-gray-600 border-gray-500/20">Rascunho</Badge>;
       default:
@@ -423,12 +424,11 @@ const ClienteDashboard = () => {
             ) : (
               <div className="space-y-3">
                 {obrasComStatus.map((obra) => {
-                  const temPendencia = obra.status === "com_pendencia";
                   return (
                     <div 
                       key={obra.id}
                       onClick={() => {
-                        if (temPendencia && obra.lote?.id) {
+                        if (obra.temPendencia && obra.lote?.id) {
                           setPendenciaDialog({
                             open: true,
                             loteId: obra.lote.id,
@@ -437,8 +437,8 @@ const ClienteDashboard = () => {
                         }
                       }}
                       className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                        temPendencia 
-                          ? "border-red-500/30 bg-red-500/5 cursor-pointer hover:bg-red-500/10"
+                        obra.temPendencia 
+                          ? "border-orange-500/30 bg-orange-500/5 cursor-pointer hover:bg-orange-500/10"
                           : obra.jaEnviado 
                             ? "border-blue-500/30 bg-blue-500/5"
                             : obra.temLista
@@ -448,8 +448,8 @@ const ClienteDashboard = () => {
                     >
                       <div className="flex items-center gap-3">
                         <Building2 className={`h-5 w-5 ${
-                          temPendencia
-                            ? "text-red-600"
+                          obra.temPendencia
+                            ? "text-orange-600"
                             : obra.jaEnviado 
                               ? "text-blue-600"
                               : obra.temLista
@@ -460,15 +460,15 @@ const ClienteDashboard = () => {
                           <p className="font-medium">{obra.nome}</p>
                           <p className="text-sm text-muted-foreground">
                             {obra.totalVidas} vidas
-                            {temPendencia && (
-                              <span className="text-red-600 ml-2">• Clique para corrigir</span>
+                            {obra.temPendencia && (
+                              <span className="text-orange-600 ml-2">• Clique para ver pendências</span>
                             )}
                           </p>
                         </div>
                       </div>
                       <div>
                         {obra.jaEnviado ? (
-                          getStatusBadge(obra.status!)
+                          getStatusBadge(obra.status!, obra.lote?.total_reprovados)
                         ) : obra.temLista ? (
                           <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
                             Pronto para enviar
@@ -489,8 +489,8 @@ const ClienteDashboard = () => {
       )}
 
       {/* Alerta de Pendências - mostra se alguma obra tem pendência */}
-      {obrasComStatus.some(o => o.status === "com_pendencia") && (
-        <Alert className="border-red-500/30 bg-red-500/5">
+      {obrasComStatus.some(o => o.temPendencia) && (
+        <Alert className="border-orange-500/30 bg-orange-500/5">
           <AlertTriangle className="h-4 w-4 text-red-600" />
           <AlertDescription className="text-red-700">
             Há obras com pendências a resolver. Verifique os detalhes acima.
