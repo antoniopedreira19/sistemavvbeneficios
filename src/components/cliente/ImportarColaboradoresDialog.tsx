@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, XCircle, UserMinus } from "lucide-react";
+import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, XCircle, UserMinus, Info } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCPF, formatCPF } from "@/lib/validators";
 import { toast } from "sonner";
@@ -121,19 +121,51 @@ export function ImportarColaboradoresDialog({
 
   const { importing, atualizarColaboradores } = useImportarColaboradores();
 
+  // --- NOVA FUNÇÃO DE DOWNLOAD (ESTILIZADA) ---
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Colaboradores");
-    worksheet.addRow(["Nome", "Sexo", "CPF", "Data Nascimento", "Salário"]);
-    worksheet.columns = [{ width: 35 }, { width: 15 }, { width: 18 }, { width: 20 }, { width: 15 }];
+
+    const headers = ["Nome", "Sexo", "CPF", "Data Nascimento", "Salário"];
+    const headerRow = worksheet.addRow(headers);
+
+    // Largura das Colunas (37.11 ~ 31 caracteres visuais)
+    const COL_WIDTH = 37.11;
+    worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
+
+    // Estilo do Cabeçalho
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF203455" }, // Azul Escuro #203455 (ARGB: FF + Hex)
+      };
+      cell.font = {
+        color: { argb: "FFFFFFFF" }, // Branco
+        bold: true,
+        size: 11,
+      };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      // Borda
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    });
+
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "modelo_colaboradores.xlsx";
+    link.download = "modelo_colaboradores_padrao.xlsx";
     link.click();
+    window.URL.revokeObjectURL(url);
+    toast.success("Modelo baixado com sucesso!");
   };
+  // ---------------------------------------------
 
   const validarArquivo = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -253,7 +285,6 @@ export function ImportarColaboradoresDialog({
 
       setValidatedRows(validated);
 
-      // Calcular Desligamentos
       const cpfsValidados = new Set(validated.filter((v) => v.status !== "erro").map((v) => v.cpf));
       const desligamentos = (existentes || []).filter((e) => !cpfsValidados.has(e.cpf)).length;
       setDesligamentosPrevistos(desligamentos);
@@ -319,12 +350,27 @@ export function ImportarColaboradoresDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+          {/* AVISO IMPORTANTE SOBRE O MODELO */}
+          <Alert className="bg-blue-50 border-blue-200 text-blue-800">
+            <Info className="h-4 w-4" />
+            <AlertTitle className="font-semibold">Recomendação:</AlertTitle>
+            <AlertDescription>
+              Para evitar erros na importação, baixe o modelo padrão abaixo e preencha os dados nele antes de fazer o
+              upload.
+            </AlertDescription>
+          </Alert>
+
           <div className="flex gap-3 flex-wrap">
-            <Button onClick={baixarModelo} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" /> Baixar Modelo
+            <Button onClick={baixarModelo} variant="outline" size="sm" className="gap-2">
+              <Download className="h-4 w-4" /> Baixar Modelo Padrão
             </Button>
-            <Button onClick={() => fileInputRef.current?.click()} disabled={processing || importing} size="sm">
-              <Upload className="h-4 w-4 mr-2" /> {processing ? "Processando..." : "Selecionar Arquivo"}
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={processing || importing}
+              size="sm"
+              className="gap-2"
+            >
+              <Upload className="h-4 w-4" /> {processing ? "Processando..." : "Selecionar Arquivo"}
             </Button>
             <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFileChange} className="hidden" />
           </div>
