@@ -29,6 +29,7 @@ import * as XLSX from "xlsx";
 import { validateCPF, formatCPF } from "@/lib/validators";
 import { cn } from "@/lib/utils";
 
+// --- CONSTANTES ---
 const CLASSIFICACOES_SALARIO = [
   { label: "Ajudante Comum", minimo: 1454.2 },
   { label: "Ajudante Prático/Meio-Oficial", minimo: 1476.2 },
@@ -44,7 +45,7 @@ const calcularClassificacao = (salario: number) => {
   return item?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
-// Helpers de normalização
+// --- HELPERS DE NORMALIZAÇÃO ---
 const normalizarHeader = (h: string) =>
   h
     .toLowerCase()
@@ -93,6 +94,13 @@ interface ValidatedRow {
   erros: string[];
 }
 
+// Assumindo que a interface Empresa inclua o CNPJ para ser usado na exportação
+interface EmpresaComCNPJ {
+  id: string;
+  nome: string;
+  cnpj: string;
+}
+
 export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +108,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"selecao" | "upload" | "conclusao">("selecao");
 
-  const [empresas, setEmpresas] = useState<{ id: string; nome: string }[]>([]);
+  const [empresas, setEmpresas] = useState<EmpresaComCNPJ[]>([]); // Usando a interface que inclui CNPJ
   const [obras, setObras] = useState<{ id: string; nome: string }[]>([]);
 
   const [selectedEmpresa, setSelectedEmpresa] = useState("");
@@ -112,12 +120,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   useEffect(() => {
     if (open) {
+      // ATUALIZADO: Buscar CNPJ junto com o ID e Nome
       supabase
         .from("empresas")
-        .select("id, nome")
+        .select("id, nome, cnpj")
         .eq("status", "ativa")
         .order("nome")
-        .then(({ data }) => setEmpresas(data || []));
+        .then(({ data }) => setEmpresas((data as EmpresaComCNPJ[]) || []));
 
       const data = new Date();
       const meses = [
@@ -193,7 +202,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       let targetSheetName = "";
       let jsonData: any[][] = [];
 
-      // Procura inteligente da aba
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -270,7 +278,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // Ordenar erros primeiro
       processados.sort((a, b) => (a.status === "erro" ? -1 : 1));
       setColaboradores(processados);
       setStep("conclusao");
@@ -281,6 +288,41 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       setLoading(false);
     }
   };
+
+  // --- NOVO: FUNÇÃO PARA BAIXAR A LISTA PRONTA ---
+  const handleDownloadLote = () => {
+    const validos = colaboradores.filter((c) => c.status === "valido");
+    if (validos.length === 0) {
+      toast.error("Não há dados válidos para baixar.");
+      return;
+    }
+
+    const currentEmpresa = empresas.find((e) => e.id === selectedEmpresa);
+    // Usa o CNPJ formatado se estiver disponível
+    const empresaCNPJ = currentEmpresa?.cnpj ? currentEmpresa.cnpj.replace(/\D/g, "") : "00000000000000";
+
+    const dataToExport = validos.map((c) => ({
+      "NOME COMPLETO": c.nome,
+      SEXO: c.sexo,
+      CPF: c.cpf,
+      "DATA NASCIMENTO": c.data_nascimento,
+      SALARIO: c.salario,
+      "CLASSIFICACAO SALARIAL": c.classificacao_salario,
+      "CNPJ DA EMPRESA": empresaCNPJ,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista Seguradora");
+
+    const empresaNomeLimpo = currentEmpresa?.nome.replace(/[^a-zA-Z0-9]/g, "") || "Lote";
+    const fileName = `LOTE_SEGURADORA_${empresaNomeLimpo}_${competencia.replace("/", "-")}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
+    toast.success("Download iniciado.");
+  };
+  // ---------------------------------------------
 
   const handleConfirmarImportacao = async () => {
     // Filtra apenas válidos
@@ -337,7 +379,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       }
 
       // 2. Processar em Batches
-      const BATCH_SIZE = 100;
+      const BATCH_SIZE = 50;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
 
@@ -400,7 +442,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     } catch (error: any) {
       console.error(error);
       toast.error("Erro no processo: " + error.message);
-      // Opcional: rollback
       if (loteIdCriado) await supabase.from("lotes_mensais").delete().eq("id", loteIdCriado);
     } finally {
       setLoading(false);
@@ -604,27 +645,21 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
-                    {colaboradores.length > 200 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
-                          ... e mais {colaboradores.length - 200} linhas.
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
+                {/* NOVO BOTÃO DE DOWNLOAD */}
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setStep("upload");
-                    setColaboradores([]);
-                  }}
+                  onClick={handleDownloadLote}
+                  disabled={loading || totalValidos === 0}
+                  className="gap-2"
                 >
-                  Trocar Arquivo
+                  <FileSpreadsheet className="h-4 w-4" /> Baixar Lista Seguradora
                 </Button>
+
                 <Button
                   onClick={handleConfirmarImportacao}
                   disabled={loading || totalValidos === 0}
