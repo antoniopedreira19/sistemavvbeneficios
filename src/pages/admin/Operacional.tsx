@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2, Inbox, Upload } from "lucide-react";
+import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import { formatCNPJ, formatCPF } from "@/lib/validators";
 
 const ITEMS_PER_PAGE = 10;
 
-type TabType = "entrada" | "seguradora" | "pendencia" | "reanalise" | "concluido";
+type TabType = "entrada" | "seguradora" | "pendencia" | "concluido";
 
 export default function Operacional() {
   const queryClient = useQueryClient();
@@ -35,7 +35,6 @@ export default function Operacional() {
     entrada: 1,
     seguradora: 1,
     pendencia: 1,
-    reanalise: 1,
     concluido: 1,
   });
 
@@ -85,11 +84,14 @@ export default function Operacional() {
       case "seguradora":
         return lotes.filter((l) => l.status === "em_analise_seguradora");
       case "pendencia":
-        return lotes.filter((l) => l.status === "com_pendencia");
-      case "reanalise":
-        return lotes.filter((l) => ["aguardando_reanalise", "em_reanalise"].includes(l.status));
+        // Pendências: lotes concluídos que têm reprovados
+        return lotes.filter((l) => l.status === "concluido" && (l.total_reprovados || 0) > 0);
       case "concluido":
-        return lotes.filter((l) => ["concluido", "faturado"].includes(l.status));
+        // Prontos: lotes concluídos sem reprovados ou faturados
+        return lotes.filter((l) => 
+          (l.status === "concluido" && (l.total_reprovados || 0) === 0) || 
+          l.status === "faturado"
+        );
       default:
         return [];
     }
@@ -108,28 +110,6 @@ export default function Operacional() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       toast.success("Enviado para Seguradora");
-      setConfirmEnviarDialog(false);
-      setActionLoading(null);
-      setSelectedLote(null);
-    },
-    onError: (e: any) => {
-      toast.error("Erro: " + e.message);
-      setActionLoading(null);
-    },
-  });
-
-  const reenviarReanaliseMutation = useMutation({
-    mutationFn: async (loteId: string) => {
-      setActionLoading(loteId);
-      const { error } = await supabase
-        .from("lotes_mensais")
-        .update({ status: "em_reanalise", enviado_seguradora_em: new Date().toISOString() })
-        .eq("id", loteId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
-      toast.success("Reenviado para análise");
       setConfirmEnviarDialog(false);
       setActionLoading(null);
       setSelectedLote(null);
@@ -249,18 +229,17 @@ export default function Operacional() {
   const handleAction = (lote: LoteOperacional, tab: string) => {
     setSelectedLote(lote);
     if (tab === "entrada") setConfirmEnviarDialog(true);
-    else if (tab === "reanalise") {
-      if (lote.status === "aguardando_reanalise") setConfirmEnviarDialog(true);
-      else setProcessarDialogOpen(true);
-    } else if (tab === "seguradora") setProcessarDialogOpen(true);
+    else if (tab === "seguradora") setProcessarDialogOpen(true);
     else if (tab === "concluido") setConfirmFaturarDialog(true);
-    else if (tab === "pendencia") toast.success("Cobrança enviada.");
+    else if (tab === "pendencia") {
+      // Ação futura: enviar email ao cliente
+      toast.success("Email de pendência enviado ao cliente (ação futura).");
+    }
   };
 
   const handleConfirmarEnvio = () => {
     if (!selectedLote) return;
-    if (selectedLote.status === "aguardando_reanalise") reenviarReanaliseMutation.mutate(selectedLote.id);
-    else enviarNovoMutation.mutate(selectedLote.id);
+    enviarNovoMutation.mutate(selectedLote.id);
   };
 
   const getPaginatedLotes = (tab: TabType) => {
@@ -287,7 +266,7 @@ export default function Operacional() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabTriggerItem id="entrada" label="Entrada" icon={Inbox} count={getLotesByTab("entrada").length} />
           <TabTriggerItem id="seguradora" label="Seguradora" icon={Clock} count={getLotesByTab("seguradora").length} />
           <TabTriggerItem
@@ -296,13 +275,6 @@ export default function Operacional() {
             icon={AlertTriangle}
             count={getLotesByTab("pendencia").length}
             variant="destructive"
-          />
-          <TabTriggerItem
-            id="reanalise"
-            label="Reanálise"
-            icon={RefreshCw}
-            count={getLotesByTab("reanalise").length}
-            variant="outline"
           />
           <TabTriggerItem
             id="concluido"
@@ -343,28 +315,14 @@ export default function Operacional() {
         )}
         {renderTabContent(
           "pendencia",
-          "Aguardando Cliente",
+          "Lotes com Pendências (Reprovados)",
           <AlertTriangle className="text-red-500" />,
           getPaginatedLotes,
           pages,
           setPages,
           handleAction,
           actionLoading,
-          "pendencia",
-          getTotalPages,
-          handleDownloadLote,
-          setLoteParaEditar,
-        )}
-        {renderTabContent(
-          "reanalise",
-          "Ciclo de Correção",
-          <RefreshCw className="text-orange-500" />,
-          getPaginatedLotes,
-          pages,
-          setPages,
-          handleAction,
-          actionLoading,
-          "reanalise",
+          "enviar_cliente",
           getTotalPages,
           handleDownloadLote,
           setLoteParaEditar,
@@ -388,13 +346,9 @@ export default function Operacional() {
       <AlertDialog open={confirmEnviarDialog} onOpenChange={setConfirmEnviarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {selectedLote?.status === "aguardando_reanalise" ? "Reenviar Correção?" : "Enviar Novo Lote?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Enviar Lote para Seguradora?</AlertDialogTitle>
             <AlertDialogDescription>
-              {selectedLote?.status === "aguardando_reanalise"
-                ? "O lote corrigido será enviado para seguradora."
-                : "O lote será enviado para análise inicial da seguradora."}
+              O lote será enviado para análise inicial da seguradora.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -95,17 +95,7 @@ export function ProcessarRetornoDialog({
         if (error) throw error;
       }
 
-      // 3. Calcular Totais Finais do Lote (Somando o que já estava com o novo)
-      // Total de reprovados agora = Reprovados antigos + Novos reprovados?
-      // Não, pois os antigos pendentes viraram aprovados ou reprovados.
-      // A conta segura é:
-      // Total Reprovados do Lote = Reprovados nesta ação + Já Reprovados anteriormente (que não foram re-submetidos)
-      // Mas simplificando: O status final do lote depende se sobrou ALGUÉM reprovado no final de tudo.
-
-      // Vamos assumir que quem está em 'jaProcessados' e está 'reprovado' continua reprovado?
-      // Não, se ele foi re-submetido ele estaria em 'pendentes'.
-      // Então 'jaProcessados' só tem 'aprovado' (sucesso antigo) ou 'reprovado' (que o cliente esqueceu de corrigir? Raro).
-
+      // 3. Calcular Totais Finais
       const totalPendentes = pendentes.length;
       const totalReprovadosAgora = reprovadosArray.length;
       const totalAprovadosAgora = totalPendentes - totalReprovadosAgora;
@@ -117,7 +107,9 @@ export function ProcessarRetornoDialog({
         jaProcessados.filter((c) => c.status_seguradora === "reprovado").length + totalReprovadosAgora;
 
       const valorTotalCalculado = totalAprovadosGeral * 50;
-      const novoStatus = totalReprovadosGeral > 0 ? "com_pendencia" : "concluido";
+
+      // NOVO FLUXO: Sempre vai para "concluido" - os aprovados seguem, reprovados ficam registrados
+      const novoStatus = "concluido";
 
       const { error: loteError } = await supabase
         .from("lotes_mensais")
@@ -132,17 +124,19 @@ export function ProcessarRetornoDialog({
 
       if (loteError) throw loteError;
 
-      return { novoStatus, totalReprovados: totalReprovadosGeral };
+      return { novoStatus, totalReprovados: totalReprovadosGeral, totalAprovados: totalAprovadosGeral };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       queryClient.invalidateQueries({ queryKey: ["colaboradores-lote", loteId] });
 
-      toast.success(
-        result.novoStatus === "concluido"
-          ? "Lote finalizado! Todos aprovados."
-          : `Processado. Total de reprovados no lote: ${result.totalReprovados}.`,
-      );
+      if (result?.totalReprovados && result.totalReprovados > 0) {
+        toast.success(
+          `Processado! ${result.totalAprovados} aprovados, ${result.totalReprovados} reprovados. Lote enviado para Prontos.`
+        );
+      } else {
+        toast.success("Lote finalizado! Todos aprovados.");
+      }
       setReprovados(new Map());
       onOpenChange(false);
     },

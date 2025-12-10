@@ -8,7 +8,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, RotateCcw, FileDown, Pencil } from "lucide-react";
+import { Loader2, Send, FileCheck, AlertTriangle, CreditCard, FileDown, Pencil } from "lucide-react";
 
 export interface LoteOperacional {
   id: string;
@@ -30,7 +30,7 @@ interface LotesTableProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
-  actionType: "enviar" | "processar" | "pendencia" | "faturar" | "reanalise";
+  actionType: "enviar" | "processar" | "pendencia" | "faturar" | "enviar_cliente";
   onAction: (lote: LoteOperacional) => void;
   onDownload?: (lote: LoteOperacional) => void;
   onEdit?: (lote: LoteOperacional) => void;
@@ -52,37 +52,14 @@ export function LotesTable({
   const getActionButton = (lote: LoteOperacional) => {
     const isActionLoading = actionLoading === lote.id;
 
-    const getInternalAction = () => {
-      if (actionType === "reanalise") {
-        if (lote.status === "aguardando_reanalise") return "enviar_reanalise";
-        if (lote.status === "em_reanalise") return "processar";
-        return "enviar_reanalise";
-      }
-      return actionType;
-    };
-
-    const currentAction = getInternalAction();
     let MainButton = null;
 
-    switch (currentAction) {
+    switch (actionType) {
       case "enviar":
         MainButton = (
           <Button size="sm" onClick={() => onAction(lote)} disabled={isActionLoading}>
             {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
             Enviar
-          </Button>
-        );
-        break;
-      case "enviar_reanalise":
-        MainButton = (
-          <Button
-            size="sm"
-            className="bg-orange-600 hover:bg-orange-700"
-            onClick={() => onAction(lote)}
-            disabled={isActionLoading}
-          >
-            {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1" />}
-            Reenviar
           </Button>
         );
         break;
@@ -106,6 +83,18 @@ export function LotesTable({
           </Button>
         );
         break;
+      case "enviar_cliente":
+        MainButton = (
+          <Button size="sm" variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50" onClick={() => onAction(lote)} disabled={isActionLoading}>
+            {isActionLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 mr-1" />
+            )}
+            Enviar para Cliente
+          </Button>
+        );
+        break;
       case "faturar":
         MainButton = (
           <Button size="sm" variant="default" onClick={() => onAction(lote)} disabled={isActionLoading}>
@@ -118,7 +107,7 @@ export function LotesTable({
 
     return (
       <div className="flex items-center justify-end gap-2">
-        {onEdit && (lote.status === "concluido" || lote.status === "aguardando_reanalise") && (
+        {onEdit && lote.status === "concluido" && (
           <Button
             size="icon"
             variant="ghost"
@@ -169,7 +158,7 @@ export function LotesTable({
               <TableHead>Obra</TableHead>
               <TableHead>Competência</TableHead>
               <TableHead className="text-center">Vidas</TableHead>
-              {(actionType === "pendencia" || actionType === "reanalise") && (
+              {actionType === "enviar_cliente" && (
                 <TableHead className="text-center">Reprovados</TableHead>
               )}
               <TableHead className="text-center">Status</TableHead>
@@ -179,36 +168,28 @@ export function LotesTable({
           <TableBody>
             {lotes.map((lote) => (
               <TableRow key={lote.id}>
-                {/* ATUALIZAÇÃO PARA MAIÚSCULAS */}
                 <TableCell className="font-medium">{lote.empresa?.nome?.toUpperCase() || "-"}</TableCell>
                 <TableCell>{lote.obra?.nome?.toUpperCase() || "SEM OBRA"}</TableCell>
-                {/* FIM ATUALIZAÇÃO */}
                 <TableCell>
                   <Badge variant="outline" className="font-mono">
                     {lote.competencia}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center">{lote.total_colaboradores || 0}</TableCell>
-                {(actionType === "pendencia" || actionType === "reanalise") && (
+                {actionType === "enviar_cliente" && (
                   <TableCell className="text-center">
                     <Badge variant="destructive">{lote.total_reprovados || 0}</Badge>
                   </TableCell>
                 )}
                 <TableCell className="text-center text-xs">
-                  {lote.status === "aguardando_reanalise" && (
-                    <Badge variant="outline" className="border-orange-400 text-orange-600">
-                      Aguardando Reanálise
-                    </Badge>
-                  )}
-                  {lote.status === "em_reanalise" && (
-                    <Badge variant="outline" className="border-blue-400 text-blue-600">
-                      Em Análise (2ª)
-                    </Badge>
-                  )}
-                  {lote.status === "com_pendencia" && <Badge variant="destructive">Pendente</Badge>}
                   {lote.status === "aguardando_processamento" && <Badge variant="secondary">Novo</Badge>}
                   {lote.status === "em_analise_seguradora" && <Badge variant="secondary">Na Seguradora</Badge>}
-                  {lote.status === "concluido" && <Badge className="bg-green-600">Concluído</Badge>}
+                  {lote.status === "concluido" && (lote.total_reprovados || 0) > 0 && (
+                    <Badge className="bg-orange-500">Com Pendências</Badge>
+                  )}
+                  {lote.status === "concluido" && (lote.total_reprovados || 0) === 0 && (
+                    <Badge className="bg-green-600">Concluído</Badge>
+                  )}
                   {lote.status === "faturado" && <Badge className="bg-blue-600">Faturado</Badge>}
                 </TableCell>
                 <TableCell className="text-right">{getActionButton(lote)}</TableCell>
