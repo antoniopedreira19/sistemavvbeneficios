@@ -94,7 +94,6 @@ interface ValidatedRow {
   erros: string[];
 }
 
-// Assumindo que a interface Empresa inclua o CNPJ para ser usado na exportação
 interface EmpresaComCNPJ {
   id: string;
   nome: string;
@@ -204,7 +203,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        // Adicionado raw:false e defval:null para melhor leitura de dados mistos
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: null }) as any[][];
         if (tempJson.length > 0) {
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
@@ -250,11 +248,12 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const cpfRaw = row[idxCPF] ? String(row[idxCPF]) : "";
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
 
-        // --- CORREÇÃO DO CPF APLICADA AQUI ---
         const cpfLimpoRaw = cpfRaw.replace(/\D/g, "");
-        // Garante 11 dígitos, preenchendo com zeros à esquerda
+        // CORREÇÃO: Garante 11 dígitos, preenchendo com zeros à esquerda
         const cpfLimpo = cpfLimpoRaw.padStart(11, "0");
-        // ------------------------------------
+
+        // Verificação se a linha é totalmente vazia (pula linhas em branco)
+        if (!nome && cpfLimpo.length === 0 && salario === 0) continue;
 
         const erros: string[] = [];
 
@@ -649,26 +648,21 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
-                    {colaboradores.length > 200 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
-                          ... e mais {colaboradores.length - 200} linhas.
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
-                {/* BOTÃO DE DOWNLOAD */}
+                {/* BOTÃO CORRIGIDO: Trocar Arquivo */}
                 <Button
                   variant="outline"
-                  onClick={handleDownloadLote}
-                  disabled={loading || totalValidos === 0}
+                  onClick={() => {
+                    setStep("upload");
+                    setColaboradores([]);
+                  }}
                   className="gap-2"
                 >
-                  <FileSpreadsheet className="h-4 w-4" /> Baixar Lista Seguradora
+                  <FileSpreadsheet className="h-4 w-4" /> Trocar Arquivo
                 </Button>
 
                 <Button
