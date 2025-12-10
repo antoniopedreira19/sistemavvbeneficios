@@ -21,6 +21,8 @@ import { LotesTable, LoteOperacional } from "@/components/admin/operacional/Lote
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
 import ExcelJS from "exceljs";
+// Adicionado formatCPF e formatCNPJ
+import { formatCNPJ, formatCPF } from "@/lib/validators";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -163,34 +165,33 @@ export default function Operacional() {
   // --- DOWNLOAD PADRÃO SEGURADORA (ExcelJS) ---
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
-      toast.info("Gerando arquivo...");
+      toast.info("Preparando download...");
 
       // 1. Buscar Colaboradores do Lote
-      const { data: itens, error } = await supabase
+      const { data: itens, error: itensError } = await supabase
         .from("colaboradores_lote")
-        .select("*")
+        .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario")
         .eq("lote_id", lote.id)
-        .eq("status_seguradora", "aprovado"); // Apenas aprovados? Ou todos? Geralmente envio é todos válidos.
+        .eq("status_seguradora", "aprovado")
+        .order("nome");
 
-      if (error) throw error;
+      if (itensError) throw itensError;
       if (!itens || itens.length === 0) {
-        toast.warning("Lote sem colaboradores para baixar.");
+        toast.warning("Lote sem colaboradores válidos para baixar.");
         return;
       }
 
-      // 2. Buscar CNPJ se não veio na listagem inicial
+      // 2. Obter CNPJ
       let cnpj = (lote.empresa as any)?.cnpj || "";
       if (!cnpj && lote.empresa_id) {
         const { data: emp } = await supabase.from("empresas").select("cnpj").eq("id", lote.empresa_id).single();
         if (emp) cnpj = emp.cnpj;
       }
-      cnpj = cnpj.replace(/\D/g, "");
 
-      // 3. Gerar Excel com ExcelJS (Estilizado)
+      // 3. Gerar Excel com ExcelJS
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Lista Seguradora");
 
-      // Cabeçalho
       const headers = [
         "NOME COMPLETO",
         "SEXO",
@@ -202,26 +203,44 @@ export default function Operacional() {
       ];
       const headerRow = worksheet.addRow(headers);
 
-      // Estilo do Cabeçalho (#203455 + Texto Branco)
+      // Estilo e Largura
+      const COL_WIDTH = 37.11;
+      worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
+
       headerRow.eachCell((cell) => {
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FF203455" }, // Azul Escuro
-        };
-        cell.font = {
-          color: { argb: "FFFFFFFF" }, // Branco
-          bold: true,
-        };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
+        cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
         cell.alignment = { horizontal: "center" };
       });
 
-      // Largura das Colunas (37.11)
-      worksheet.columns = headers.map(() => ({ width: 37.11 }));
-
-      // Dados
+      // Adicionar Dados com Tipagem Correta para Excel
       itens.forEach((c) => {
-        worksheet.addRow([c.nome, c.sexo, c.cpf, c.data_nascimento, c.salario, c.classificacao_salario, cnpj]);
+        // DATA: Criar objeto Date para o Excel entender como data
+        // Formato esperado do banco: YYYY-MM-DD
+        let dataNascDate = null;
+        if (c.data_nascimento) {
+          const parts = c.data_nascimento.split("-");
+          // new Date(ano, mes-1, dia)
+          dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        }
+
+        const row = worksheet.addRow([
+          c.nome.toUpperCase(), // Nome em Maiúsculo
+          c.sexo,
+          formatCPF(c.cpf), // CPF formatado (String)
+          dataNascDate, // Data (Objeto)
+          Number(c.salario), // Salário (Número)
+          c.classificacao_salario,
+          formatCNPJ(cnpj), // CNPJ formatado (String)
+        ]);
+
+        // Formatação da Célula de Data (DD/MM/AAAA)
+        if (dataNascDate) {
+          row.getCell(4).numFmt = "dd/mm/yyyy";
+        }
+
+        // Formatação da Célula de Salário (Número com 2 casas)
+        row.getCell(5).numFmt = "#,##0.00";
       });
 
       // Download
@@ -234,7 +253,7 @@ export default function Operacional() {
       a.click();
       window.URL.revokeObjectURL(url);
 
-      toast.success("Download concluído.");
+      toast.success("Download concluído com sucesso!");
     } catch (e: any) {
       console.error(e);
       toast.error("Erro ao gerar arquivo: " + e.message);
