@@ -73,7 +73,7 @@ const MinhaEquipe = () => {
     enabled: !!empresaId,
   });
 
-  // 2. Buscar Colaboradores
+  // 2. Buscar Colaboradores (Apenas Ativos)
   const { data: colaboradoresData, isLoading: colaboradoresLoading } = useQuery({
     queryKey: ["colaboradores", empresaId, selectedObra, searchTerm, currentPage],
     queryFn: async () => {
@@ -81,7 +81,8 @@ const MinhaEquipe = () => {
       let query = supabase
         .from("colaboradores")
         .select("*, obras(nome)", { count: "exact" })
-        .eq("empresa_id", empresaId);
+        .eq("empresa_id", empresaId)
+        .eq("status", "ativo"); // Filtro para ocultar desligados
 
       if (selectedObra !== "all") query = query.eq("obra_id", selectedObra);
       if (searchTerm) query = query.or(`nome.ilike.%${searchTerm}%,cpf.ilike.%${searchTerm}%`);
@@ -100,23 +101,22 @@ const MinhaEquipe = () => {
   const { data: stats } = useQuery({
     queryKey: ["colaboradores-stats", empresaId],
     queryFn: async () => {
-      if (!empresaId) return { total: 0, ativos: 0, afastados: 0 };
-      const { count: total } = await supabase
-        .from("colaboradores")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", empresaId);
+      if (!empresaId) return { ativos: 0, afastados: 0 };
+
       const { count: ativos } = await supabase
         .from("colaboradores")
         .select("*", { count: "exact", head: true })
         .eq("empresa_id", empresaId)
         .eq("status", "ativo")
         .eq("afastado", false);
+
       const { count: afastados } = await supabase
         .from("colaboradores")
         .select("*", { count: "exact", head: true })
         .eq("empresa_id", empresaId)
-        .eq("afastado", true);
-      return { total: total || 0, ativos: ativos || 0, afastados: afastados || 0 };
+        .eq("afastado", true); // Afastados geralmente contam como ativos no sistema mas com flag
+
+      return { ativos: ativos || 0, afastados: afastados || 0 };
     },
     enabled: !!empresaId,
   });
@@ -183,16 +183,8 @@ const MinhaEquipe = () => {
         </AlertDescription>
       </Alert>
 
-      {/* Cards Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.total}</div>
-          </CardContent>
-        </Card>
+      {/* Resumo Estatístico - Sem Card Total */}
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Ativos</CardTitle>
@@ -278,7 +270,7 @@ const MinhaEquipe = () => {
                   {colaboradores.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhum colaborador encontrado.
+                        Nenhum colaborador ativo encontrado.
                       </TableCell>
                     </TableRow>
                   ) : (
