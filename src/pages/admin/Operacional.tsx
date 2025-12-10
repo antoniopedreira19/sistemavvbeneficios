@@ -49,7 +49,7 @@ export default function Operacional() {
   const [importarDialogOpen, setImportarDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // --- QUERY: AGORA BUSCA CNPJ ---
+  // --- QUERY ---
   const { data: lotes = [], isLoading } = useQuery({
     queryKey: ["lotes-operacional"],
     queryFn: async () => {
@@ -59,9 +59,9 @@ export default function Operacional() {
           `
           id, competencia, total_colaboradores, total_reprovados, total_aprovados, valor_total, created_at, status, empresa_id,
           empresa:empresas(nome, cnpj),
-          obra:obras(nome)
+          obra:obras(id, nome) 
         `,
-        )
+        ) // <-- QUERY CORRIGIDA AQUI: obra(id, nome)
         .in("status", [
           "aguardando_processamento",
           "em_analise_seguradora",
@@ -95,7 +95,7 @@ export default function Operacional() {
     }
   };
 
-  // --- MUTAÇÕES ---
+  // ... (Resto das mutações: enviar, reenviar, faturar - MANTIDAS IGUAIS) ...
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -164,37 +164,32 @@ export default function Operacional() {
     },
   });
 
-  // --- DOWNLOAD PADRÃO SEGURADORA (ExcelJS) ---
+  // --- DOWNLOAD ---
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
-      toast.info("Gerando arquivo padrão seguradora...");
-
-      // 1. Buscar Colaboradores
-      const { data: itens, error: itensError } = await supabase
+      toast.info("Preparando download...");
+      const { data: itens, error } = await supabase
         .from("colaboradores_lote")
         .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario")
         .eq("lote_id", lote.id)
-        .eq("status_seguradora", "aprovado") // Baixa apenas aprovados
+        .eq("status_seguradora", "aprovado")
         .order("nome");
 
-      if (itensError) throw itensError;
+      if (error) throw error;
       if (!itens || itens.length === 0) {
-        toast.warning("Lote vazio ou sem aprovados.");
+        toast.warning("Lote vazio.");
         return;
       }
 
-      // 2. Obter CNPJ
       let cnpj = (lote.empresa as any)?.cnpj || "";
-      // Fallback: busca do banco se não veio na query inicial
       if (!cnpj && lote.empresa_id) {
         const { data: emp } = await supabase.from("empresas").select("cnpj").eq("id", lote.empresa_id).single();
         if (emp) cnpj = emp.cnpj;
       }
+      cnpj = cnpj.replace(/\D/g, "");
 
-      // 3. Gerar Excel
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Lista Seguradora");
-
       const headers = [
         "NOME COMPLETO",
         "SEXO",
@@ -206,26 +201,21 @@ export default function Operacional() {
       ];
       const headerRow = worksheet.addRow(headers);
 
-      // Estilo de Coluna e Cabeçalho
       const COL_WIDTH = 37.11;
       worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
 
       headerRow.eachCell((cell) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } }; // Azul #203455
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
         cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
         cell.alignment = { horizontal: "center" };
       });
 
-      // Dados
       itens.forEach((c) => {
-        // Data Nascimento (DD/MM/AAAA)
         let dataNascDate = null;
         if (c.data_nascimento) {
-          // Suporta YYYY-MM-DD
           const parts = c.data_nascimento.split("-");
-          if (parts.length === 3) {
+          if (parts.length === 3)
             dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          }
         }
 
         const row = worksheet.addRow([
@@ -237,17 +227,10 @@ export default function Operacional() {
           c.classificacao_salario,
           formatCNPJ(cnpj),
         ]);
-
-        // Formato Data no Excel
-        if (dataNascDate) {
-          row.getCell(4).numFmt = "dd/mm/yyyy";
-        }
-
-        // Formato Moeda (Número com 2 casas)
+        if (dataNascDate) row.getCell(4).numFmt = "dd/mm/yyyy";
         row.getCell(5).numFmt = "#,##0.00";
       });
 
-      // Download
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = window.URL.createObjectURL(blob);
@@ -256,15 +239,13 @@ export default function Operacional() {
       a.download = `SEGURADORA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
-
       toast.success("Download concluído.");
     } catch (e: any) {
       console.error(e);
-      toast.error("Erro ao gerar arquivo: " + e.message);
+      toast.error("Erro: " + e.message);
     }
   };
 
-  // --- ACTION ROUTER ---
   const handleAction = (lote: LoteOperacional, tab: string) => {
     setSelectedLote(lote);
     if (tab === "entrada") setConfirmEnviarDialog(true);
@@ -332,7 +313,6 @@ export default function Operacional() {
           />
         </TabsList>
 
-        {/* Passando onDownload para as abas que precisam (Geralmente Prontos e talvez Seguradora) */}
         {renderTabContent(
           "entrada",
           "Entrada de Novos Lotes",
@@ -429,7 +409,8 @@ export default function Operacional() {
           <AlertDialogHeader>
             <AlertDialogTitle>Liberar Faturamento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso irá gerar a NF. Valor estimado:{" "}
+              Isso irá gerar a NF para o lote de <strong>{selectedLote?.empresa?.nome}</strong>.<br />
+              Valor estimado:{" "}
               <strong>R$ {((selectedLote?.total_colaboradores || 0) * 50).toLocaleString("pt-BR")}</strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
