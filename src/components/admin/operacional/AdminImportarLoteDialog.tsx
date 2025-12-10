@@ -26,7 +26,7 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { validateCPF, formatCPF } from "@/lib/validators";
+import { validateCPF, formatCPF, formatCNPJ } from "@/lib/validators";
 import { cn } from "@/lib/utils";
 
 // --- CONSTANTES ---
@@ -61,33 +61,10 @@ const normalizarSexo = (valor: any): string => {
   return "Masculino";
 };
 
-// --- CORREÇÃO ROBUSTA DE SALÁRIO ---
 const normalizarSalario = (valor: any): number => {
   if (typeof valor === "number") return valor;
   if (!valor) return 0;
-
-  let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
-
-  const lastComma = str.lastIndexOf(",");
-  const lastDot = str.lastIndexOf(".");
-
-  if (lastComma > -1 && lastDot > -1) {
-    // Tem AMBOS (ponto e vírgula)
-    if (lastDot > lastComma) {
-      // Ex: 2,781.52 (Formato US) -> Remove vírgula
-      str = str.replace(/,/g, "");
-    } else {
-      // Ex: 2.781,52 (Formato BR) -> Remove ponto, troca vírgula por ponto
-      str = str.replace(/\./g, "").replace(",", ".");
-    }
-  } else if (lastComma > -1) {
-    // Só tem vírgula (Ex: 2781,52) -> Troca por ponto
-    str = str.replace(",", ".");
-  } else {
-    // Só tem ponto ou nenhum (Ex: 2781.52 ou 2781) -> Mantém
-    // (Nada a fazer)
-  }
-
+  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
@@ -203,7 +180,8 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     },
     onSuccess: (newObra) => {
       toast.success(`Obra "${newObra.nome}" criada com sucesso!`);
-      setObras([newObra]);
+      // Atualiza a lista e seleciona a nova obra
+      setObras((old) => [...old, newObra]);
       setSelectedObra(newObra.id);
     },
     onError: (error) => {
@@ -225,7 +203,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        // raw: false para obter os valores formatados como string (ajuda em datas e valores monetários)
         const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: null }) as any[][];
         if (tempJson.length > 0) {
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
@@ -304,12 +281,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
-      // CORREÇÃO: Manter ordem original (linha) após separar erros?
-      // Ou melhor: Ordenar erros primeiro, depois pelo número da linha.
       processados.sort((a, b) => {
         if (a.status === "erro" && b.status === "valido") return -1;
         if (a.status === "valido" && b.status === "erro") return 1;
-        return a.linha - b.linha; // Mantém ordem original secundária
+        return a.linha - b.linha;
       });
 
       setColaboradores(processados);
@@ -322,6 +297,43 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
+  const handleDownloadLote = () => {
+    const validos = colaboradores.filter((c) => c.status === "valido");
+    if (validos.length === 0) {
+      toast.error("Não há dados válidos para baixar.");
+      return;
+    }
+
+    const currentEmpresa = empresas.find((e) => e.id === selectedEmpresa);
+    const empresaCNPJ = currentEmpresa?.cnpj ? currentEmpresa.cnpj.replace(/\D/g, "") : "00000000000000";
+
+    const dataToExport = validos.map((c) => ({
+      "NOME COMPLETO": c.nome,
+      SEXO: c.sexo,
+      CPF: c.cpf,
+      "DATA NASCIMENTO": c.data_nascimento,
+      SALARIO: c.salario,
+      "CLASSIFICACAO SALARIAL": c.classificacao_salario,
+      "CNPJ DA EMPRESA": empresaCNPJ,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Configura largura das colunas
+    const wch = 37.11;
+    worksheet["!cols"] = [{ wch }, { wch }, { wch }, { wch }, { wch }, { wch }, { wch }];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista Seguradora");
+
+    const empresaNomeLimpo = currentEmpresa?.nome.replace(/[^a-zA-Z0-9]/g, "") || "Lote";
+    const fileName = `LOTE_SEGURADORA_${empresaNomeLimpo}_${competencia.replace("/", "-")}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
+    toast.success("Download iniciado.");
+  };
+
   const handleConfirmarImportacao = async () => {
     const validos = colaboradores.filter((c) => c.status === "valido");
     if (!selectedEmpresa || !selectedObra || validos.length === 0) return;
@@ -332,7 +344,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
-      // 1. Verificar/Criar Lote com status PROVISÓRIO
+      // 1. Verificar/Criar Lote (Upsert)
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
         .select("id")
@@ -510,33 +522,10 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
               {selectedEmpresa && (
                 <div className="space-y-2">
                   <Label>Obra / Filial</Label>
-                  {obras.length === 0 && !loading ? (
-                    <div className="border border-dashed border-yellow-300 bg-yellow-50 rounded-lg p-4 text-center space-y-3">
-                      <div className="flex justify-center text-yellow-600">
-                        <Building className="h-6 w-6" />
-                      </div>
-                      <p className="text-sm text-yellow-800 font-medium">
-                        Esta empresa ainda não possui obras cadastradas.
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="default"
-                        className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
-                        onClick={() => createObraMutation.mutate()}
-                        disabled={createObraMutation.isPending}
-                      >
-                        {createObraMutation.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Plus className="mr-2 h-4 w-4" />
-                        )}
-                        Criar Obra Padrão (Nome da Empresa)
-                      </Button>
-                    </div>
-                  ) : (
+                  {/* MODIFICADO: Sempre mostra o Select e o Botão de Adicionar */}
+                  <div className="flex gap-2">
                     <Select value={selectedObra} onValueChange={setSelectedObra}>
-                      <SelectTrigger>
+                      <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Selecione a obra..." />
                       </SelectTrigger>
                       <SelectContent className="max-h-[200px]">
@@ -547,6 +536,27 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         ))}
                       </SelectContent>
                     </Select>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => createObraMutation.mutate()}
+                      disabled={createObraMutation.isPending}
+                      title="Criar Obra Padrão"
+                    >
+                      {createObraMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  {obras.length === 0 && !loading && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Nenhuma obra encontrada. Clique no + para criar a obra padrão.
+                    </p>
                   )}
                 </div>
               )}
@@ -570,6 +580,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
             </div>
           )}
 
+          {/* ... Resto do código (upload, conclusão) permanece igual ao anterior corrigido */}
           {step === "upload" && (
             <div className="space-y-4 animate-in fade-in text-center">
               <div
@@ -641,19 +652,12 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
-                    {colaboradores.length > 200 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
-                          ... e mais {colaboradores.length - 200} linhas.
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
-                {/* BOTÃO RESTAURADO: Trocar Arquivo */}
+                {/* BOTÃO CORRIGIDO: Trocar Arquivo */}
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -665,14 +669,25 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <FileSpreadsheet className="h-4 w-4" /> Trocar Arquivo
                 </Button>
 
-                <Button
-                  onClick={handleConfirmarImportacao}
-                  disabled={loading || totalValidos === 0}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-                >
-                  {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-                  Confirmar e Finalizar
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={handleDownloadLote}
+                    disabled={loading || totalValidos === 0}
+                    className="gap-2"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" /> Baixar Lista Seguradora
+                  </Button>
+
+                  <Button
+                    onClick={handleConfirmarImportacao}
+                    disabled={loading || totalValidos === 0}
+                    className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                  >
+                    {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                    Confirmar e Finalizar
+                  </Button>
+                </div>
               </div>
             </div>
           )}
