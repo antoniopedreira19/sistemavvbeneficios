@@ -108,15 +108,15 @@ export function ProcessarRetornoDialog({
 
       const valorTotalCalculado = totalAprovadosGeral * 50;
 
-      // NOVO FLUXO: Sempre vai para "concluido" - os aprovados seguem, reprovados ficam registrados
-      const novoStatus = "concluido";
-
+      // ATUALIZA O LOTE ORIGINAL - vai para "concluido" com total_reprovados = 0
+      // Este lote representa apenas os APROVADOS
       const { error: loteError } = await supabase
         .from("lotes_mensais")
         .update({
-          status: novoStatus,
+          status: "concluido",
           total_aprovados: totalAprovadosGeral,
-          total_reprovados: totalReprovadosGeral,
+          total_reprovados: 0, // Lote de aprovados não tem reprovados
+          total_colaboradores: totalAprovadosGeral,
           valor_total: valorTotalCalculado,
           updated_at: new Date().toISOString(),
         })
@@ -124,7 +124,54 @@ export function ProcessarRetornoDialog({
 
       if (loteError) throw loteError;
 
-      return { novoStatus, totalReprovados: totalReprovadosGeral, totalAprovados: totalAprovadosGeral };
+      // SE HOUVER REPROVADOS: Criar um lote separado apenas com os reprovados para Pendências
+      if (totalReprovadosGeral > 0) {
+        // Buscar dados do lote original para criar o novo
+        const { data: loteOriginal } = await supabase
+          .from("lotes_mensais")
+          .select("empresa_id, competencia, obra_id")
+          .eq("id", loteId)
+          .single();
+
+        if (loteOriginal) {
+          // Criar novo lote para pendências
+          const { data: lotePendencia, error: createError } = await supabase
+            .from("lotes_mensais")
+            .insert({
+              empresa_id: loteOriginal.empresa_id,
+              competencia: loteOriginal.competencia,
+              obra_id: loteOriginal.obra_id,
+              status: "com_pendencia",
+              total_colaboradores: totalReprovadosGeral,
+              total_reprovados: totalReprovadosGeral,
+              total_aprovados: 0,
+              valor_total: 0,
+              observacoes: `Pendências do lote processado em ${new Date().toLocaleDateString("pt-BR")}`,
+            })
+            .select("id")
+            .single();
+
+          if (createError) throw createError;
+
+          // Mover colaboradores reprovados para o novo lote de pendências
+          if (lotePendencia) {
+            const reprovadosColabIds = colaboradores
+              .filter((c) => c.status_seguradora === "reprovado" || reprovadosIds.includes(c.id))
+              .map((c) => c.id);
+
+            if (reprovadosColabIds.length > 0) {
+              const { error: moveError } = await supabase
+                .from("colaboradores_lote")
+                .update({ lote_id: lotePendencia.id })
+                .in("id", reprovadosColabIds);
+
+              if (moveError) throw moveError;
+            }
+          }
+        }
+      }
+
+      return { totalReprovados: totalReprovadosGeral, totalAprovados: totalAprovadosGeral };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
@@ -132,10 +179,10 @@ export function ProcessarRetornoDialog({
 
       if (result?.totalReprovados && result.totalReprovados > 0) {
         toast.success(
-          `Processado! ${result.totalAprovados} aprovados, ${result.totalReprovados} reprovados. Lote enviado para Prontos.`
+          `Processado! ${result.totalAprovados} aprovados → Prontos | ${result.totalReprovados} reprovados → Pendências`
         );
       } else {
-        toast.success("Lote finalizado! Todos aprovados.");
+        toast.success("Lote finalizado! Todos aprovados → Prontos");
       }
       setReprovados(new Map());
       onOpenChange(false);

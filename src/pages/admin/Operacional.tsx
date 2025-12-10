@@ -65,8 +65,6 @@ export default function Operacional() {
           "aguardando_processamento",
           "em_analise_seguradora",
           "com_pendencia",
-          "aguardando_reanalise",
-          "em_reanalise",
           "concluido",
           "faturado",
         ])
@@ -84,14 +82,11 @@ export default function Operacional() {
       case "seguradora":
         return lotes.filter((l) => l.status === "em_analise_seguradora");
       case "pendencia":
-        // Pendências: lotes concluídos que têm reprovados
-        return lotes.filter((l) => l.status === "concluido" && (l.total_reprovados || 0) > 0);
+        // Pendências: lotes com status com_pendencia (apenas reprovados)
+        return lotes.filter((l) => l.status === "com_pendencia");
       case "concluido":
-        // Prontos: lotes concluídos sem reprovados ou faturados
-        return lotes.filter((l) => 
-          (l.status === "concluido" && (l.total_reprovados || 0) === 0) || 
-          l.status === "faturado"
-        );
+        // Prontos: lotes concluídos (apenas aprovados) ou faturados
+        return lotes.filter((l) => l.status === "concluido" || l.status === "faturado");
       default:
         return [];
     }
