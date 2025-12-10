@@ -204,7 +204,8 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        // Adicionado raw:false e defval:null para melhor leitura de dados mistos
+        const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: null }) as any[][];
         if (tempJson.length > 0) {
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
             const row = tempJson[i];
@@ -249,7 +250,12 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const cpfRaw = row[idxCPF] ? String(row[idxCPF]) : "";
         const salario = idxSalario !== -1 ? normalizarSalario(row[idxSalario]) : 0;
 
-        const cpfLimpo = cpfRaw.replace(/\D/g, "");
+        // --- CORREÇÃO DO CPF APLICADA AQUI ---
+        const cpfLimpoRaw = cpfRaw.replace(/\D/g, "");
+        // Garante 11 dígitos, preenchendo com zeros à esquerda
+        const cpfLimpo = cpfLimpoRaw.padStart(11, "0");
+        // ------------------------------------
+
         const erros: string[] = [];
 
         if (!nome) erros.push("Nome ausente");
@@ -257,7 +263,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido");
 
         if (cpfsVistos.has(cpfLimpo)) erros.push("Duplicado na planilha");
-        if (cpfLimpo) cpfsVistos.add(cpfLimpo);
+        if (cpfLimpo.length === 11) cpfsVistos.add(cpfLimpo);
 
         processados.push({
           linha: i + 1,
@@ -278,6 +284,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         return;
       }
 
+      // Ordenar erros primeiro
       processados.sort((a, b) => (a.status === "erro" ? -1 : 1));
       setColaboradores(processados);
       setStep("conclusao");
@@ -289,7 +296,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
   };
 
-  // --- NOVO: FUNÇÃO PARA BAIXAR A LISTA PRONTA ---
   const handleDownloadLote = () => {
     const validos = colaboradores.filter((c) => c.status === "valido");
     if (validos.length === 0) {
@@ -298,7 +304,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     }
 
     const currentEmpresa = empresas.find((e) => e.id === selectedEmpresa);
-    // Usa o CNPJ formatado se estiver disponível
     const empresaCNPJ = currentEmpresa?.cnpj ? currentEmpresa.cnpj.replace(/\D/g, "") : "00000000000000";
 
     const dataToExport = validos.map((c) => ({
@@ -322,7 +327,6 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
     toast.success("Download iniciado.");
   };
-  // ---------------------------------------------
 
   const handleConfirmarImportacao = async () => {
     // Filtra apenas válidos
@@ -379,7 +383,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
       }
 
       // 2. Processar em Batches
-      const BATCH_SIZE = 50;
+      const BATCH_SIZE = 100;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
 
@@ -483,7 +487,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <PopoverContent className="w-[460px] p-0" align="start">
                     <Command>
                       <CommandInput placeholder="Buscar empresa..." />
-                      <CommandList>
+                      <CommandList className="max-h-[300px]">
                         <CommandEmpty>Nenhuma empresa encontrada.</CommandEmpty>
                         <CommandGroup>
                           {empresas.map((empresa) => (
@@ -645,12 +649,19 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                         <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
                       </TableRow>
                     ))}
+                    {colaboradores.length > 200 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                          ... e mais {colaboradores.length - 200} linhas.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
 
               <div className="flex justify-between pt-4 border-t">
-                {/* NOVO BOTÃO DE DOWNLOAD */}
+                {/* BOTÃO DE DOWNLOAD */}
                 <Button
                   variant="outline"
                   onClick={handleDownloadLote}
