@@ -84,29 +84,91 @@ const normalizarSexo = (valor: any): string | null => {
 };
 
 const normalizarSalario = (valor: any): number | null => {
-  if (typeof valor === "number") return valor;
   if (!valor) return null;
-  const str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  
+  // Se já é número, retorna diretamente
+  if (typeof valor === "number") return valor;
+  
+  let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
+  
+  // Detecta formato brasileiro: 3.500,00 ou 3500,00
+  // Se tem vírgula como separador decimal
+  if (str.includes(",")) {
+    // Remove pontos de milhar e troca vírgula por ponto
+    str = str.replace(/\./g, "").replace(",", ".");
+  } else if (str.includes(".")) {
+    // Formato pode ser 3500.00 (inglês) ou 3.500 (milhar BR sem decimal)
+    // Se o ponto divide em grupos de 3, é separador de milhar
+    const parts = str.split(".");
+    if (parts.length === 2 && parts[1].length === 3) {
+      // É separador de milhar brasileiro (ex: 3.500)
+      str = str.replace(/\./g, "");
+    }
+    // Senão mantém como decimal (ex: 3500.00)
+  }
+  
   const num = parseFloat(str);
   return isNaN(num) ? null : num;
 };
 
+// Valida se uma data é válida
+const isValidDate = (dateStr: string): boolean => {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  
+  // Ano deve estar entre 1900 e 2100
+  if (year < 1900 || year > 2100) return false;
+  // Mês entre 1 e 12
+  if (month < 1 || month > 12) return false;
+  // Dia entre 1 e 31
+  if (day < 1 || day > 31) return false;
+  
+  // Verifica se a data é válida criando um Date e comparando
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
+
 const normalizarData = (valor: any): string | null => {
   if (!valor) return null;
+  
   const str = String(valor).trim();
-  const ddmmyyyyMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddmmyyyyMatch) {
-    const [, dia, mes, ano] = ddmmyyyyMatch;
-    return `${ano}-${mes}-${dia}`;
+  
+  // Tenta formato DD/MM/YYYY (aceita 1 ou 2 dígitos para dia/mês)
+  const ddmmyyyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, "0");
+    const month = ddmmyyyy[2].padStart(2, "0");
+    let year = ddmmyyyy[3];
+    // Se ano tem 2 dígitos, assume século 19 ou 20
+    if (year.length === 2) {
+      year = parseInt(year) > 50 ? `19${year}` : `20${year}`;
+    } else if (year.length === 3) {
+      // Ano inválido com 3 dígitos (ex: 193)
+      return null;
+    }
+    const dateStr = `${year}-${month}-${day}`;
+    return isValidDate(dateStr) ? dateStr : null;
   }
+  
+  // Tenta formato YYYY-MM-DD
   const yyyymmddMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (yyyymmddMatch) return str;
+  if (yyyymmddMatch) {
+    return isValidDate(str) ? str : null;
+  }
+  
+  // Tenta formato serial Excel
   if (!isNaN(Number(valor))) {
     const excelDate = XLSX.SSF.parse_date_code(Number(valor));
-    if (excelDate) {
-      return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
+    if (excelDate && excelDate.y >= 1900 && excelDate.y <= 2100) {
+      const dateStr = `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
+      return isValidDate(dateStr) ? dateStr : null;
     }
   }
+  
   return null;
 };
 
