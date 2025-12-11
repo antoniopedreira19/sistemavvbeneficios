@@ -97,13 +97,11 @@ export default function Dashboard() {
         .select("*", { count: "exact", head: true })
         .eq("status", "ativa");
 
-      // B. Vidas Ativas Totais
+      // B. Vidas Ativas Totais (para referência)
       const { count: totalVidasAtivas } = await supabase
         .from("colaboradores")
         .select("*", { count: "exact", head: true })
         .eq("status", "ativo");
-
-      const faturamentoEsperado = (totalVidasAtivas || 0) * 50;
 
       // C. Lotes do Mês Selecionado
       const { data: lotesMes } = await supabase
@@ -153,7 +151,6 @@ export default function Dashboard() {
 
       return {
         empresasAtivas: empresasAtivas || 0,
-        faturamentoEsperado,
         totalVidasAtivas: totalVidasAtivas || 0,
         lotesMes: lotesMes || [],
         colaboradores: colaboradoresDetalhados,
@@ -170,6 +167,9 @@ export default function Dashboard() {
   const totalEmpresasNoMes = new Set(dashboardData?.lotesMes.map((l) => l.empresa_id)).size || 0;
   const faturamentoRealizado = dashboardData?.notasMes.reduce((acc, nf) => acc + Number(nf.valor_total), 0) || 0;
   const totalVidasMes = dashboardData?.lotesMes.reduce((acc, l) => acc + (l.total_colaboradores || 0), 0) || 0;
+  
+  // Faturamento esperado = apenas vidas que ENVIARAM no mês * R$50
+  const faturamentoEsperado = totalVidasMes * 50;
 
   // Gráfico Gênero
   const genderStats =
@@ -323,9 +323,9 @@ export default function Dashboard() {
 
         <KpiCard
           title="Faturamento Esperado"
-          value={`R$ ${dashboardData?.faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
+          value={`R$ ${faturamentoEsperado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
           icon={Wallet}
-          description="Potencial (Vidas Totais)"
+          description="Vidas Enviadas × R$50"
           iconColor="text-blue-600"
         />
 
