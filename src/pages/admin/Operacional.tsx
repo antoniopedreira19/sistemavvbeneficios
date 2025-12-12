@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload } from "lucide-react";
+import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload, Search } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
@@ -31,6 +32,7 @@ type TabType = "entrada" | "seguradora" | "pendencia" | "concluido";
 export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
+  const [searchTerm, setSearchTerm] = useState("");
   const [pages, setPages] = useState<Record<TabType, number>>({
     entrada: 1,
     seguradora: 1,
@@ -60,7 +62,7 @@ export default function Operacional() {
           empresa:empresas(nome, cnpj),
           obra:obras(id, nome) 
         `,
-        ) // <-- QUERY CORRIGIDA AQUI: obra(id, nome)
+        )
         .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido", "faturado"])
         .order("created_at", { ascending: false });
 
@@ -69,24 +71,29 @@ export default function Operacional() {
     },
   });
 
+  // Lógica de Filtragem e Ordenação
+  const filteredLotes = lotes
+    .filter((l) => l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => (a.empresa?.nome || "").localeCompare(b.empresa?.nome || ""));
+
   const getLotesByTab = (tab: TabType) => {
     switch (tab) {
       case "entrada":
-        return lotes.filter((l) => l.status === "aguardando_processamento");
+        return filteredLotes.filter((l) => l.status === "aguardando_processamento");
       case "seguradora":
-        return lotes.filter((l) => l.status === "em_analise_seguradora");
+        return filteredLotes.filter((l) => l.status === "em_analise_seguradora");
       case "pendencia":
         // Pendências: lotes com status com_pendencia (apenas reprovados)
-        return lotes.filter((l) => l.status === "com_pendencia");
+        return filteredLotes.filter((l) => l.status === "com_pendencia");
       case "concluido":
         // Prontos: lotes concluídos (apenas aprovados) ou faturados
-        return lotes.filter((l) => l.status === "concluido" || l.status === "faturado");
+        return filteredLotes.filter((l) => l.status === "concluido" || l.status === "faturado");
       default:
         return [];
     }
   };
 
-  // ... (Resto das mutações: enviar, reenviar, faturar - MANTIDAS IGUAIS) ...
+  // ... (Resto das mutações: enviar, reenviar, faturar) ...
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -249,9 +256,31 @@ export default function Operacional() {
             <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
           </div>
         </div>
-        <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
-          <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
-        </Button>
+
+        {/* Busca e Importação */}
+        <div className="flex items-center gap-3">
+          <div className="relative w-72">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por empresa..."
+              className="pl-8 bg-background"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                // Resetar paginação ao buscar
+                setPages({
+                  entrada: 1,
+                  seguradora: 1,
+                  pendencia: 1,
+                  concluido: 1,
+                });
+              }}
+            />
+          </div>
+          <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
+            <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
