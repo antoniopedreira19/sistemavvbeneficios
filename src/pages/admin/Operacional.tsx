@@ -103,14 +103,114 @@ export default function Operacional() {
     }
   };
 
+  // --- MUTAÇÃO DE ENVIO COM GERAÇÃO DE EXCEL E UPLOAD ---
   const enviarNovoMutation = useMutation({
-    mutationFn: async (loteId: string) => {
-      setActionLoading(loteId);
-      const { error } = await supabase
-        .from("lotes_mensais")
-        .update({ status: "em_analise_seguradora", enviado_seguradora_em: new Date().toISOString() })
-        .eq("id", loteId);
-      if (error) throw error;
+    mutationFn: async (lote: LoteOperacional) => {
+      setActionLoading(lote.id);
+
+      try {
+        toast.info("Gerando arquivo e enviando para nuvem...");
+
+        // 1. Buscar dados para o Excel (Igual ao Download)
+        const { data: itens, error: fetchError } = await supabase
+          .from("colaboradores_lote")
+          .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario, created_at")
+          .eq("lote_id", lote.id)
+          .order("created_at", { ascending: false });
+
+        if (fetchError) throw fetchError;
+        if (!itens || itens.length === 0) throw new Error("Lote vazio, impossível enviar.");
+
+        // 2. Filtrar Duplicatas (Manter apenas o mais recente)
+        const cpfsProcessados = new Set();
+        const itensUnicos = itens.filter((item) => {
+          const cpfLimpo = item.cpf.replace(/\D/g, "");
+          if (cpfsProcessados.has(cpfLimpo)) return false;
+          cpfsProcessados.add(cpfLimpo);
+          return true;
+        });
+        itensUnicos.sort((a, b) => a.nome.localeCompare(b.nome));
+
+        // 3. Gerar o Excel em Memória
+        let cnpj = (lote.empresa as any)?.cnpj || "";
+        if (!cnpj && lote.empresa_id) {
+          const { data: emp } = await supabase.from("empresas").select("cnpj").eq("id", lote.empresa_id).single();
+          if (emp) cnpj = emp.cnpj;
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Lista Seguradora");
+        const headers = [
+          "NOME COMPLETO",
+          "SEXO",
+          "CPF",
+          "DATA NASCIMENTO",
+          "SALARIO",
+          "CLASSIFICACAO SALARIAL",
+          "CNPJ DA EMPRESA",
+        ];
+        const headerRow = worksheet.addRow(headers);
+
+        // Estilização
+        const COL_WIDTH = 37.11;
+        worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
+        headerRow.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
+          cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+          cell.alignment = { horizontal: "center" };
+        });
+
+        itensUnicos.forEach((c) => {
+          let dataNascDate = null;
+          if (c.data_nascimento) {
+            const parts = c.data_nascimento.split("-");
+            if (parts.length === 3)
+              dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          }
+          const row = worksheet.addRow([
+            c.nome?.toUpperCase(),
+            c.sexo,
+            formatCPF(c.cpf),
+            dataNascDate,
+            c.salario ? Number(c.salario) : 0,
+            c.classificacao_salario,
+            formatCNPJ(cnpj),
+          ]);
+          if (dataNascDate) row.getCell(4).numFmt = "dd/mm/yyyy";
+          row.getCell(5).numFmt = "#,##0.00";
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+        // 4. Upload para o Supabase Storage
+        // Nota: Assumindo bucket 'contratos' e pasta 'lotes'
+        const fileName = `lotes/${lote.id}_${Date.now()}.xlsx`;
+        const { error: uploadError } = await supabase.storage
+          .from("contratos")
+          .upload(fileName, blob, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        // 5. Pegar a URL Pública
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("contratos").getPublicUrl(fileName);
+
+        // 6. Atualizar Banco de Dados (Isso dispara o Webhook)
+        const { error: updateError } = await supabase
+          .from("lotes_mensais")
+          .update({
+            status: "em_analise_seguradora",
+            enviado_seguradora_em: new Date().toISOString(),
+            arquivo_url: publicUrl,
+          })
+          .eq("id", lote.id);
+
+        if (updateError) throw updateError;
+      } catch (error: any) {
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
@@ -154,7 +254,6 @@ export default function Operacional() {
     try {
       toast.info("Preparando download...");
 
-      // 1. Busca todos os itens do lote ordenados por data de criação (mais recente primeiro)
       const { data: itens, error } = await supabase
         .from("colaboradores_lote")
         .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario, created_at")
@@ -168,8 +267,7 @@ export default function Operacional() {
         return;
       }
 
-      // 2. FILTRAGEM DE DUPLICATAS
-      // Mantém apenas a tentativa mais recente de cada CPF
+      // FILTRAGEM DE DUPLICATAS
       const cpfsProcessados = new Set();
       const itensUnicos = itens.filter((item) => {
         const cpfLimpo = item.cpf.replace(/\D/g, "");
@@ -180,7 +278,7 @@ export default function Operacional() {
         return true;
       });
 
-      // 3. Ordenação Alfabética para o Excel
+      // Ordenação Alfabética
       itensUnicos.sort((a, b) => a.nome.localeCompare(b.nome));
 
       let cnpj = (lote.empresa as any)?.cnpj || "";
@@ -261,7 +359,8 @@ export default function Operacional() {
 
   const handleConfirmarEnvio = () => {
     if (!selectedLote) return;
-    enviarNovoMutation.mutate(selectedLote.id);
+    // IMPORTANTE: Agora passamos o objeto completo, pois precisamos do ID da empresa para o nome do arquivo
+    enviarNovoMutation.mutate(selectedLote);
   };
 
   const getPaginatedLotes = (tab: TabType) => {
