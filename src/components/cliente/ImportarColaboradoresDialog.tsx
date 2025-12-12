@@ -65,7 +65,7 @@ const calcularClassificacaoSalario = (valorSalario: number): string => {
   return classificacao?.label || CLASSIFICACOES_SALARIO[0].label;
 };
 
-// --- HELPERS DE NORMALIZAÇÃO ---
+// --- HELPERS DE NORMALIZAÇÃO (IGUAL AO ADMIN) ---
 const normalizarHeader = (h: string) =>
   h
     .toLowerCase()
@@ -81,27 +81,82 @@ const normalizarSexo = (valor: any): string => {
   return "Masculino";
 };
 
+// Lógica robusta de salário (BRL/USD) igual ao Admin
 const normalizarSalario = (valor: any): number => {
-  if (typeof valor === "number") return valor;
   if (!valor) return 0;
+  if (typeof valor === "number") return valor;
+
   let str = String(valor).replace(/R\$/g, "").replace(/\s/g, "").trim();
-  if (str.includes(",")) str = str.replace(/\./g, "").replace(",", ".");
-  else str = str.replace(/,/g, "");
+
+  // Detecta formato brasileiro: 3.500,00 ou 3500,00
+  if (str.includes(",")) {
+    // Remove pontos de milhar e troca vírgula por ponto
+    str = str.replace(/\./g, "").replace(",", ".");
+  } else if (str.includes(".")) {
+    // Formato pode ser 3500.00 (inglês) ou 3.500 (milhar BR sem decimal)
+    const parts = str.split(".");
+    if (parts.length === 2 && parts[1].length === 3) {
+      str = str.replace(/\./g, ""); // É milhar
+    }
+  }
+
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
 
-const normalizarData = (valor: any): string => {
-  if (!valor) return new Date().toISOString().split("T")[0];
+// Validação de data robusta igual ao Admin
+const isValidDate = (dateStr: string): boolean => {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (year < 1900 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
+
+const normalizarData = (valor: any): { date: string; valid: boolean } => {
+  if (!valor) return { date: "", valid: false };
+
   const str = String(valor).trim();
-  const ddmmyyyy = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+
+  // Tenta formato DD/MM/YYYY
+  const ddmmyyyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, "0");
+    const month = ddmmyyyy[2].padStart(2, "0");
+    let year = ddmmyyyy[3];
+    if (year.length === 2) {
+      year = parseInt(year) > 50 ? `19${year}` : `20${year}`;
+    } else if (year.length === 3) {
+      return { date: str, valid: false };
+    }
+    const dateStr = `${year}-${month}-${day}`;
+    return { date: dateStr, valid: isValidDate(dateStr) };
+  }
+
+  // Tenta formato serial Excel
   if (!isNaN(Number(valor))) {
     const excelDate = XLSX.SSF.parse_date_code(Number(valor));
-    if (excelDate)
-      return `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
+    if (excelDate && excelDate.y >= 1900 && excelDate.y <= 2100) {
+      const dateStr = `${excelDate.y}-${String(excelDate.m).padStart(2, "0")}-${String(excelDate.d).padStart(2, "0")}`;
+      return { date: dateStr, valid: isValidDate(dateStr) };
+    }
   }
-  return str;
+
+  // Tenta formato YYYY-MM-DD
+  const yyyymmdd = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyymmdd) {
+    return { date: str, valid: isValidDate(str) };
+  }
+
+  return { date: str, valid: false };
 };
 
 export function ImportarColaboradoresDialog({
@@ -121,7 +176,6 @@ export function ImportarColaboradoresDialog({
 
   const { importing, atualizarColaboradores } = useImportarColaboradores();
 
-  // --- NOVA FUNÇÃO DE DOWNLOAD (ESTILIZADA) ---
   const baixarModelo = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Colaboradores");
@@ -129,24 +183,21 @@ export function ImportarColaboradoresDialog({
     const headers = ["Nome", "Sexo", "CPF", "Data Nascimento", "Salário"];
     const headerRow = worksheet.addRow(headers);
 
-    // Largura das Colunas (37.11 ~ 31 caracteres visuais)
     const COL_WIDTH = 37.11;
     worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
 
-    // Estilo do Cabeçalho
     headerRow.eachCell((cell) => {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF203455" }, // Azul Escuro #203455 (ARGB: FF + Hex)
+        fgColor: { argb: "FF203455" },
       };
       cell.font = {
-        color: { argb: "FFFFFFFF" }, // Branco
+        color: { argb: "FFFFFFFF" },
         bold: true,
         size: 11,
       };
       cell.alignment = { horizontal: "center", vertical: "middle" };
-      // Borda
       cell.border = {
         top: { style: "thin" },
         left: { style: "thin" },
@@ -165,7 +216,6 @@ export function ImportarColaboradoresDialog({
     window.URL.revokeObjectURL(url);
     toast.success("Modelo baixado com sucesso!");
   };
-  // ---------------------------------------------
 
   const validarArquivo = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -184,10 +234,9 @@ export function ImportarColaboradoresDialog({
       let targetSheetName = "";
       let jsonData: any[][] = [];
 
-      // Busca Aba Correta
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: null }) as any[][];
+        const tempJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: null }) as any[][]; // raw: true para pegar valores crus
         if (tempJson.length > 0) {
           for (let i = 0; i < Math.min(5, tempJson.length); i++) {
             const row = tempJson[i];
@@ -209,17 +258,15 @@ export function ImportarColaboradoresDialog({
         return;
       }
 
-      // Mapeia Colunas
       const rawHeaders = jsonData[0].map((h: any) => String(h || "").trim());
       const headers = rawHeaders.map(normalizarHeader);
 
       const idxNome = headers.findIndex((h) => h.includes("nome") || h.includes("funcionario"));
       const idxCPF = headers.findIndex((h) => h.includes("cpf") || h.includes("documento"));
       const idxSalario = headers.findIndex((h) => h.includes("salario") || h.includes("vencimento"));
-      const idxNasc = headers.findIndex((h) => h.includes("nascimento") || h.includes("data"));
+      const idxNasc = headers.findIndex((h) => h.includes("nascimento") || h.includes("data") || h.includes("dtnasc"));
       const idxSexo = headers.findIndex((h) => h.includes("sexo") || h.includes("genero"));
 
-      // Busca Existentes
       const { data: existentes } = await supabase
         .from("colaboradores")
         .select("*")
@@ -246,11 +293,18 @@ export function ImportarColaboradoresDialog({
 
         const erros: string[] = [];
         const sexo = idxSexo !== -1 ? normalizarSexo(row[idxSexo]) : "Masculino";
-        const nascimento = idxNasc !== -1 ? normalizarData(row[idxNasc]) : "1900-01-01";
+
+        // Nova validação de data
+        const dataResult = idxNasc !== -1 ? normalizarData(row[idxNasc]) : { date: "1900-01-01", valid: false };
+        const nascimento = dataResult.date;
 
         if (!nome) erros.push("Nome ausente");
         if (cpfLimpo.length !== 11) erros.push("CPF inválido");
         else if (!validateCPF(cpfLimpo)) erros.push("CPF inválido");
+
+        if (idxNasc !== -1 && !dataResult.valid) {
+          erros.push("Data inválida");
+        }
 
         if (cpfsNoArquivo.has(cpfLimpo)) erros.push("Duplicado no arquivo");
         if (cpfLimpo.length === 11) cpfsNoArquivo.add(cpfLimpo);
@@ -265,7 +319,7 @@ export function ImportarColaboradoresDialog({
             dadosAtuais = existente;
             if (existente.nome !== nome.toUpperCase()) alteracoes.push("Nome");
             if (Math.abs(existente.salario - salario) > 0.01) alteracoes.push("Salário");
-            status = alteracoes.length > 0 ? "atualizado" : "novo"; // Se não mudou nada, considera "novo" (mantido na lista)
+            status = alteracoes.length > 0 ? "atualizado" : "novo";
           }
         }
 
@@ -282,6 +336,13 @@ export function ImportarColaboradoresDialog({
           dadosAtuais,
         });
       }
+
+      // Ordenação: Erros no topo
+      validated.sort((a, b) => {
+        if (a.status === "erro" && b.status !== "erro") return -1;
+        if (a.status !== "erro" && b.status === "erro") return 1;
+        return a.linha - b.linha;
+      });
 
       setValidatedRows(validated);
 
@@ -350,7 +411,6 @@ export function ImportarColaboradoresDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-          {/* AVISO IMPORTANTE SOBRE O MODELO */}
           <Alert className="bg-blue-50 border-blue-200 text-blue-800">
             <Info className="h-4 w-4" />
             <AlertTitle className="font-semibold">Recomendação:</AlertTitle>
@@ -377,7 +437,6 @@ export function ImportarColaboradoresDialog({
 
           {validatedRows.length > 0 && (
             <>
-              {/* Cards de Resumo */}
               <div className="grid gap-3 md:grid-cols-5">
                 <Alert className="cursor-pointer py-2 border-muted" onClick={() => setFiltroStatus("todos")}>
                   <FileSpreadsheet className="h-4 w-4" />
@@ -407,7 +466,6 @@ export function ImportarColaboradoresDialog({
                 )}
               </div>
 
-              {/* Aviso de edição para erros */}
               {validatedRows.some((r) => r.status === "erro") && (
                 <Alert className="bg-blue-50 border-blue-200">
                   <Pencil className="h-4 w-4 text-blue-600" />
@@ -418,7 +476,6 @@ export function ImportarColaboradoresDialog({
                 </Alert>
               )}
 
-              {/* Tabela Paginada */}
               <div className="rounded-lg border">
                 <Table>
                   <TableHeader>
@@ -461,7 +518,6 @@ export function ImportarColaboradoresDialog({
                 </Table>
               </div>
 
-              {/* Paginação */}
               {totalPaginas > 1 && (
                 <Pagination className="justify-end">
                   <PaginationContent>
