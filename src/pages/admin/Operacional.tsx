@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload } from "lucide-react";
+import { Building2, Clock, AlertTriangle, RefreshCw, CheckCircle2, Inbox, Upload, Search } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
@@ -26,15 +27,17 @@ import { formatCNPJ, formatCPF } from "@/lib/validators";
 
 const ITEMS_PER_PAGE = 10;
 
-type TabType = "entrada" | "seguradora" | "pendencia" | "concluido";
+type TabType = "entrada" | "seguradora" | "pendencia" | "reanalise" | "concluido";
 
 export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
+  const [searchTerm, setSearchTerm] = useState(""); // Novo estado de busca
   const [pages, setPages] = useState<Record<TabType, number>>({
     entrada: 1,
     seguradora: 1,
     pendencia: 1,
+    reanalise: 1,
     concluido: 1,
   });
 
@@ -60,8 +63,16 @@ export default function Operacional() {
           empresa:empresas(nome, cnpj),
           obra:obras(id, nome) 
         `,
-        ) // <-- QUERY CORRIGIDA AQUI: obra(id, nome)
-        .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido", "faturado"])
+        )
+        .in("status", [
+          "aguardando_processamento",
+          "em_analise_seguradora",
+          "com_pendencia",
+          "aguardando_reanalise",
+          "em_reanalise",
+          "concluido",
+          "faturado",
+        ])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -69,21 +80,43 @@ export default function Operacional() {
     },
   });
 
+  // --- FILTRO E ORDENAÇÃO ---
   const getLotesByTab = (tab: TabType) => {
+    let filteredLotes = [];
+
+    // 1. Filtrar por Status (Aba)
     switch (tab) {
       case "entrada":
-        return lotes.filter((l) => l.status === "aguardando_processamento");
+        filteredLotes = lotes.filter((l) => l.status === "aguardando_processamento");
+        break;
       case "seguradora":
-        return lotes.filter((l) => l.status === "em_analise_seguradora");
+        filteredLotes = lotes.filter((l) => l.status === "em_analise_seguradora");
+        break;
       case "pendencia":
-        // Pendências: lotes com status com_pendencia (apenas reprovados)
-        return lotes.filter((l) => l.status === "com_pendencia");
+        filteredLotes = lotes.filter((l) => l.status === "com_pendencia");
+        break;
+      case "reanalise":
+        filteredLotes = lotes.filter((l) => ["aguardando_reanalise", "em_reanalise"].includes(l.status));
+        break;
       case "concluido":
-        // Prontos: lotes concluídos (apenas aprovados) ou faturados
-        return lotes.filter((l) => l.status === "concluido" || l.status === "faturado");
+        filteredLotes = lotes.filter((l) => ["concluido", "faturado"].includes(l.status));
+        break;
       default:
-        return [];
+        filteredLotes = [];
     }
+
+    // 2. Filtrar por Busca (Nome da Empresa)
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      filteredLotes = filteredLotes.filter((l) => l.empresa?.nome?.toLowerCase().includes(lowerTerm));
+    }
+
+    // 3. Ordenar Alfabeticamente (Nome da Empresa)
+    return filteredLotes.sort((a, b) => {
+      const nomeA = a.empresa?.nome || "";
+      const nomeB = b.empresa?.nome || "";
+      return nomeA.localeCompare(nomeB);
+    });
   };
 
   // ... (Resto das mutações: enviar, reenviar, faturar - MANTIDAS IGUAIS) ...
@@ -99,6 +132,28 @@ export default function Operacional() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
       toast.success("Enviado para Seguradora");
+      setConfirmEnviarDialog(false);
+      setActionLoading(null);
+      setSelectedLote(null);
+    },
+    onError: (e: any) => {
+      toast.error("Erro: " + e.message);
+      setActionLoading(null);
+    },
+  });
+
+  const reenviarReanaliseMutation = useMutation({
+    mutationFn: async (loteId: string) => {
+      setActionLoading(loteId);
+      const { error } = await supabase
+        .from("lotes_mensais")
+        .update({ status: "em_reanalise", enviado_seguradora_em: new Date().toISOString() })
+        .eq("id", loteId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lotes-operacional"] });
+      toast.success("Reenviado para análise");
       setConfirmEnviarDialog(false);
       setActionLoading(null);
       setSelectedLote(null);
@@ -218,7 +273,10 @@ export default function Operacional() {
   const handleAction = (lote: LoteOperacional, tab: string) => {
     setSelectedLote(lote);
     if (tab === "entrada") setConfirmEnviarDialog(true);
-    else if (tab === "seguradora") setProcessarDialogOpen(true);
+    else if (tab === "reanalise") {
+      if (lote.status === "aguardando_reanalise") setConfirmEnviarDialog(true);
+      else setProcessarDialogOpen(true);
+    } else if (tab === "seguradora") setProcessarDialogOpen(true);
     else if (tab === "concluido") setConfirmFaturarDialog(true);
     else if (tab === "pendencia") {
       // Ação futura: enviar email ao cliente
@@ -228,7 +286,8 @@ export default function Operacional() {
 
   const handleConfirmarEnvio = () => {
     if (!selectedLote) return;
-    enviarNovoMutation.mutate(selectedLote.id);
+    if (selectedLote.status === "aguardando_reanalise") reenviarReanaliseMutation.mutate(selectedLote.id);
+    else enviarNovoMutation.mutate(selectedLote.id);
   };
 
   const getPaginatedLotes = (tab: TabType) => {
@@ -241,7 +300,7 @@ export default function Operacional() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Building2 className="h-8 w-8 text-primary" />
           <div>
@@ -249,13 +308,26 @@ export default function Operacional() {
             <p className="text-muted-foreground">Gestão de Fluxo de Lotes</p>
           </div>
         </div>
-        <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
-          <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
-        </Button>
+
+        <div className="flex gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar empresa..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
+            <Upload className="mr-2 h-4 w-4" /> Importar Lote
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabTriggerItem id="entrada" label="Entrada" icon={Inbox} count={getLotesByTab("entrada").length} />
           <TabTriggerItem id="seguradora" label="Seguradora" icon={Clock} count={getLotesByTab("seguradora").length} />
           <TabTriggerItem
@@ -264,6 +336,13 @@ export default function Operacional() {
             icon={AlertTriangle}
             count={getLotesByTab("pendencia").length}
             variant="destructive"
+          />
+          <TabTriggerItem
+            id="reanalise"
+            label="Reanálise"
+            icon={RefreshCw}
+            count={getLotesByTab("reanalise").length}
+            variant="outline"
           />
           <TabTriggerItem
             id="concluido"
@@ -311,7 +390,21 @@ export default function Operacional() {
           setPages,
           handleAction,
           actionLoading,
-          "enviar_cliente",
+          "pendencia",
+          getTotalPages,
+          handleDownloadLote,
+          setLoteParaEditar,
+        )}
+        {renderTabContent(
+          "reanalise",
+          "Ciclo de Correção",
+          <RefreshCw className="text-orange-500" />,
+          getPaginatedLotes,
+          pages,
+          setPages,
+          handleAction,
+          actionLoading,
+          "reanalise",
           getTotalPages,
           handleDownloadLote,
           setLoteParaEditar,
@@ -335,8 +428,14 @@ export default function Operacional() {
       <AlertDialog open={confirmEnviarDialog} onOpenChange={setConfirmEnviarDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Enviar Lote para Seguradora?</AlertDialogTitle>
-            <AlertDialogDescription>O lote será enviado para análise inicial da seguradora.</AlertDialogDescription>
+            <AlertDialogTitle>
+              {selectedLote?.status === "aguardando_reanalise" ? "Reenviar Correção?" : "Enviar Novo Lote?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedLote?.status === "aguardando_reanalise"
+                ? "O lote corrigido será enviado para seguradora."
+                : "O lote será enviado para análise inicial da seguradora."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
