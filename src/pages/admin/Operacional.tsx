@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload, Search } from "lucide-react";
+import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload, Search, ArrowUpDown } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
@@ -28,11 +29,16 @@ import { formatCNPJ, formatCPF } from "@/lib/validators";
 const ITEMS_PER_PAGE = 10;
 
 type TabType = "entrada" | "seguradora" | "pendencia" | "concluido";
+type SortType = "alfabetica" | "recente";
 
 export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
+
+  // Estados de Filtro e Ordenação
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState<SortType>("alfabetica");
+
   const [pages, setPages] = useState<Record<TabType, number>>({
     entrada: 1,
     seguradora: 1,
@@ -64,17 +70,25 @@ export default function Operacional() {
         `,
         )
         .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido", "faturado"])
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }); // Ordem padrão do banco (Recente)
 
       if (error) throw error;
       return data as unknown as LoteOperacional[];
     },
   });
 
-  // Lógica de Filtragem e Ordenação
+  // --- Lógica de Filtragem e Ordenação Dinâmica ---
   const filteredLotes = lotes
     .filter((l) => l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => (a.empresa?.nome || "").localeCompare(b.empresa?.nome || ""));
+    .sort((a, b) => {
+      if (sortBy === "alfabetica") {
+        // A-Z pelo nome da empresa
+        return (a.empresa?.nome || "").localeCompare(b.empresa?.nome || "");
+      } else {
+        // Mais recentes primeiro (Data de Criação)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
 
   const getLotesByTab = (tab: TabType) => {
     switch (tab) {
@@ -83,17 +97,15 @@ export default function Operacional() {
       case "seguradora":
         return filteredLotes.filter((l) => l.status === "em_analise_seguradora");
       case "pendencia":
-        // Pendências: lotes com status com_pendencia (apenas reprovados)
         return filteredLotes.filter((l) => l.status === "com_pendencia");
       case "concluido":
-        // Prontos: lotes concluídos (apenas aprovados) ou faturados
         return filteredLotes.filter((l) => l.status === "concluido" || l.status === "faturado");
       default:
         return [];
     }
   };
 
-  // ... (Resto das mutações: enviar, reenviar, faturar) ...
+  // ... (Mutações permanecem iguais: enviar, reenviar, faturar) ...
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -140,7 +152,7 @@ export default function Operacional() {
     },
   });
 
-  // --- DOWNLOAD ---
+  // ... (Função handleDownloadLote permanece igual) ...
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
       toast.info("Preparando download...");
@@ -228,7 +240,6 @@ export default function Operacional() {
     else if (tab === "seguradora") setProcessarDialogOpen(true);
     else if (tab === "concluido") setConfirmFaturarDialog(true);
     else if (tab === "pendencia") {
-      // Ação futura: enviar email ao cliente
       toast.success("Email de pendência enviado ao cliente (ação futura).");
     }
   };
@@ -248,7 +259,7 @@ export default function Operacional() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           <Building2 className="h-8 w-8 text-primary" />
           <div>
@@ -257,9 +268,10 @@ export default function Operacional() {
           </div>
         </div>
 
-        {/* Busca e Importação */}
-        <div className="flex items-center gap-3">
-          <div className="relative w-72">
+        {/* Controles: Busca, Ordenação e Importação */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          {/* Busca */}
+          <div className="relative w-full md:w-64">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por empresa..."
@@ -267,18 +279,26 @@ export default function Operacional() {
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
-                // Resetar paginação ao buscar
-                setPages({
-                  entrada: 1,
-                  seguradora: 1,
-                  pendencia: 1,
-                  concluido: 1,
-                });
+                setPages({ entrada: 1, seguradora: 1, pendencia: 1, concluido: 1 });
               }}
             />
           </div>
+
+          {/* Ordenação */}
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortType)}>
+            <SelectTrigger className="w-full md:w-[180px] bg-background">
+              <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Ordenar por" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alfabetica">Ordem Alfabética</SelectItem>
+              <SelectItem value="recente">Mais Recentes</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Importar */}
           <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
-            <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
+            <Upload className="mr-2 h-4 w-4" /> Importar
           </Button>
         </div>
       </div>
