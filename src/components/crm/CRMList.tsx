@@ -5,17 +5,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Mail, Phone, MoreHorizontal, FileText, Users, Eye, FileCheck, Filter } from "lucide-react";
+import { Search, Mail, Phone, MoreHorizontal, Users, Eye, FileCheck, Filter, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   Pagination,
   PaginationContent,
@@ -258,14 +259,30 @@ export function CRMList() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
+
+                            {/* AÇÃO PRINCIPAL: Ver Detalhes / Contrato */}
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewDetails(empresa);
+                              }}
+                              className="font-medium text-primary cursor-pointer"
+                            >
+                              <Eye className="mr-2 h-4 w-4" /> Ver Detalhes / Contrato
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            {/* AÇÃO SECUNDÁRIA: Editar Dados Cadastrais */}
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setEmpresaParaEditar(empresa);
                               }}
                             >
-                              <FileText className="mr-2 h-4 w-4" /> Editar / Contrato
+                              <Pencil className="mr-2 h-4 w-4" /> Editar Dados Cadastrais
                             </DropdownMenuItem>
+
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -311,6 +328,7 @@ export function CRMList() {
         </CardContent>
       </Card>
 
+      {/* Modal de Detalhes (Painel Principal) */}
       <EmpresaDetailDialog
         empresa={selectedEmpresa}
         open={detailDialogOpen}
@@ -320,6 +338,7 @@ export function CRMList() {
         onEmpresaUpdated={() => queryClient.invalidateQueries({ queryKey: ["empresas-ativas"] })}
       />
 
+      {/* Modal de Edição de Dados (Formulário) */}
       {empresaParaEditar && (
         <EditarEmpresaDialog
           open={!!empresaParaEditar}
