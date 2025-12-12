@@ -8,7 +8,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
@@ -18,7 +17,6 @@ import {
   FileSpreadsheet,
   CheckCircle,
   Plus,
-  Building,
   AlertTriangle,
   XCircle,
   CheckCircle2,
@@ -29,8 +27,9 @@ import {
   Pencil,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { validateCPF, formatCPF, formatCNPJ } from "@/lib/validators";
+import { validateCPF, formatCNPJ } from "@/lib/validators";
 import { cn } from "@/lib/utils";
+import { EditableColaboradorRow } from "@/components/shared/EditableColaboradorRow";
 
 // --- CONSTANTES ---
 const CLASSIFICACOES_SALARIO = [
@@ -758,46 +757,57 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 )}
               </div>
 
+              {totalErros > 0 && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Pencil className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800">Edição Disponível</AlertTitle>
+                  <AlertDescription className="text-blue-700">
+                    Clique no ícone de lápis nas linhas inválidas para corrigir os dados diretamente.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <div className="border rounded-lg max-h-[400px] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[50px]">Ln</TableHead>
-                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="w-[80px]">Status</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
+                      <TableHead>Sexo</TableHead>
+                      <TableHead>Nascimento</TableHead>
                       <TableHead>Salário</TableHead>
-                      <TableHead>Mensagem</TableHead>
+                      <TableHead>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {colaboradores.slice(0, 200).map((colab, idx) => (
-                      <TableRow key={idx} className={colab.status === "erro" ? "bg-red-50/50" : ""}>
-                        <TableCell className="text-xs text-muted-foreground">{colab.linha}</TableCell>
-                        <TableCell>
-                          {colab.status === "valido" ? (
-                            <Badge className="bg-green-500 hover:bg-green-600 text-[10px]">Válido</Badge>
-                          ) : (
-                            <Badge variant="destructive" className="text-[10px]">
-                              Inválido
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-medium text-xs truncate max-w-[150px]" title={colab.nome}>
-                          {colab.nome}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {colab.status === "valido" ? formatCPF(colab.cpf) : colab.cpf}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {colab.salario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </TableCell>
-                        <TableCell className="text-xs text-red-600 font-medium">{colab.erros.join(", ")}</TableCell>
-                      </TableRow>
+                      <EditableColaboradorRow
+                        key={`${colab.cpf}-${idx}`}
+                        colaborador={colab}
+                        showSalary={true}
+                        onSave={(updatedData) => {
+                          const newColaboradores = [...colaboradores];
+                          const originalIdx = colaboradores.findIndex((c) => c.linha === colab.linha);
+                          if (originalIdx !== -1) {
+                            // Re-validate the updated data
+                            const erros: string[] = [];
+                            newColaboradores[originalIdx] = {
+                              ...newColaboradores[originalIdx],
+                              ...updatedData,
+                              classificacao_salario: calcularClassificacao(updatedData.salario),
+                              status: "valido",
+                              erros: [],
+                            };
+                            setColaboradores(newColaboradores);
+                          }
+                        }}
+                      />
                     ))}
                     {colaboradores.length > 200 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-4 text-xs">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-4 text-xs">
                           ... e mais {colaboradores.length - 200} linhas.
                         </TableCell>
                       </TableRow>
