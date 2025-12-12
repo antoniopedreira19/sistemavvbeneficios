@@ -784,15 +784,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                   <TableBody>
                     {colaboradores.slice(0, 200).map((colab, idx) => (
                       <EditableColaboradorRow
-                        key={`${colab.cpf}-${idx}`}
+                        key={`${colab.cpf}-${colab.linha}-${idx}`}
                         colaborador={colab}
                         showSalary={true}
                         onSave={(updatedData) => {
                           const newColaboradores = [...colaboradores];
                           const originalIdx = colaboradores.findIndex((c) => c.linha === colab.linha);
                           if (originalIdx !== -1) {
-                            // Re-validate the updated data
-                            const erros: string[] = [];
                             newColaboradores[originalIdx] = {
                               ...newColaboradores[originalIdx],
                               ...updatedData,
@@ -802,6 +800,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                             };
                             setColaboradores(newColaboradores);
                           }
+                        }}
+                        onDelete={(linha) => {
+                          setColaboradores(colaboradores.filter((c) => c.linha !== linha));
                         }}
                       />
                     ))}

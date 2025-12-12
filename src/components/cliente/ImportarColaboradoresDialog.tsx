@@ -436,7 +436,7 @@ export function ImportarColaboradoresDialog({
                   <TableBody>
                     {paginatedRows.map((row, idx) => (
                       <EditableColaboradorRow
-                        key={`${row.cpf}-${idx}`}
+                        key={`${row.cpf}-${row.linha}-${idx}`}
                         colaborador={row}
                         showSalary={true}
                         onSave={(updatedData) => {
@@ -451,6 +451,9 @@ export function ImportarColaboradoresDialog({
                             };
                             setValidatedRows(newRows);
                           }
+                        }}
+                        onDelete={(linha) => {
+                          setValidatedRows(validatedRows.filter((r) => r.linha !== linha));
                         }}
                       />
                     ))}
