@@ -322,13 +322,13 @@ export function EditableColaboradorRow({
         </TableCell>
       )}
       <TableCell>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
           {isError && (
             <>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-xs gap-1 text-blue-600 border-blue-300 hover:bg-blue-50"
+                className="h-6 px-2 text-xs gap-1 text-blue-600 border-blue-300 hover:bg-blue-50 whitespace-nowrap"
                 onClick={() => setIsEditing(true)}
               >
                 <Pencil className="h-3 w-3" /> Editar
@@ -346,13 +346,8 @@ export function EditableColaboradorRow({
               )}
             </>
           )}
-          {colaborador.erros && colaborador.erros.length > 0 && !isError && (
-            <span className="text-[10px] text-red-600 font-medium">
-              {colaborador.erros.join(", ")}
-            </span>
-          )}
-          {isError && colaborador.erros && colaborador.erros.length > 0 && (
-            <span className="text-[10px] text-red-600 ml-1">
+          {colaborador.erros && colaborador.erros.length > 0 && (
+            <span className="text-xs text-red-600 font-medium whitespace-nowrap">
               {colaborador.erros.join(", ")}
             </span>
           )}

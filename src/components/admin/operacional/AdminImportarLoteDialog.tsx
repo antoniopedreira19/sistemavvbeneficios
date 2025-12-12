@@ -552,7 +552,7 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-[95vw] w-[1400px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lote Pronto (Admin)</DialogTitle>
           <DialogDescription>
