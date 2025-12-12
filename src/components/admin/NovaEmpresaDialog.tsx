@@ -1,225 +1,174 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-import { validateCNPJ, formatCNPJ, formatTelefone } from "@/lib/validators";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { EmpresaStatus } from "@/types/crm";
-
-const empresaSchema = z.object({
-  nome: z.string().trim().min(1, "Nome é obrigatório").max(200, "Nome muito longo"),
-  nome_responsavel: z.string().trim().max(200, "Nome muito longo").optional().or(z.literal("")),
-  cnpj: z
-    .string()
-    .trim()
-    .min(1, "CNPJ é obrigatório")
-    .refine((val) => validateCNPJ(val), "CNPJ inválido"),
-  email_contato: z.string().trim().email("Email inválido").max(255, "Email muito longo").optional().or(z.literal("")),
-  telefone_contato: z.string().trim().optional().or(z.literal("")),
-  status: z.enum(["sem_retorno", "tratativa", "contrato_assinado", "apolices_emitida", "acolhimento", "ativa", "inativa", "cancelada"]),
-});
-
-type EmpresaFormData = z.infer<typeof empresaSchema>;
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { formatCNPJ, formatCPF } from "@/lib/validators"; // Certifique-se que formatCPF existe aqui ou em utils
 
 interface NovaEmpresaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess?: () => void;
 }
 
-export const NovaEmpresaDialog = ({ open, onOpenChange, onSuccess }: NovaEmpresaDialogProps) => {
+export function NovaEmpresaDialog({ open, onOpenChange }: NovaEmpresaDialogProps) {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
 
-  const form = useForm<EmpresaFormData>({
-    resolver: zodResolver(empresaSchema),
-    defaultValues: {
-      nome: "",
-      nome_responsavel: "",
-      cnpj: "",
-      email_contato: "",
-      telefone_contato: "",
-      status: "sem_retorno",
+  // Campos
+  const [nome, setNome] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [endereco, setEndereco] = useState("");
+  const [responsavelNome, setResponsavelNome] = useState("");
+  const [responsavelCpf, setResponsavelCpf] = useState("");
+
+  const criarEmpresaMutation = useMutation({
+    mutationFn: async () => {
+      const cnpjLimpo = cnpj.replace(/\D/g, "");
+      const cpfLimpo = responsavelCpf.replace(/\D/g, "");
+
+      if (cnpjLimpo.length !== 14) {
+        throw new Error("CNPJ inválido (deve ter 14 dígitos)");
+      }
+
+      const { error } = await supabase.from("empresas").insert({
+        nome,
+        cnpj: cnpjLimpo,
+        endereco: endereco || null,
+        responsavel_nome: responsavelNome || null,
+        responsavel_cpf: cpfLimpo || null,
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Empresa criada com sucesso!");
+      queryClient.invalidateQueries({ queryKey: ["admin-empresas"] });
+      onOpenChange(false);
+      // Reset form
+      setNome("");
+      setCnpj("");
+      setEndereco("");
+      setResponsavelNome("");
+      setResponsavelCpf("");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Erro ao criar empresa");
     },
   });
 
-  const onSubmit = async (data: EmpresaFormData) => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.from("empresas").insert([
-        {
-          nome: data.nome,
-          nome_responsavel: data.nome_responsavel,
-          cnpj: data.cnpj,
-          email_contato: data.email_contato,
-          telefone_contato: data.telefone_contato,
-          status: data.status,
-        },
-      ]);
-
-      if (error) throw error;
-
-      toast({
-        title: "Empresa cadastrada!",
-        description: "A empresa foi cadastrada com sucesso.",
-      });
-
-      form.reset();
-      onOpenChange(false);
-      onSuccess?.();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao cadastrar empresa",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nome || !cnpj) {
+      toast.error("Nome e CNPJ são obrigatórios");
+      return;
     }
+    criarEmpresaMutation.mutate();
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild></DialogTrigger>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Nova Empresa</DialogTitle>
-          <DialogDescription>Cadastre uma nova empresa cliente no sistema</DialogDescription>
-        </DialogHeader>
-        <div className="overflow-y-auto flex-1 px-1">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="nome"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nome da Empresa</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ex: Empresa ABC Ltda" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+      <DialogContent className="sm:max-w-[500px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Nova Empresa</DialogTitle>
+            <DialogDescription>Cadastre uma nova empresa cliente no sistema.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {/* Dados Principais */}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="nome" className="text-right">
+                Nome *
+              </Label>
+              <Input
+                id="nome"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                className="col-span-3"
+                placeholder="Razão Social ou Fantasia"
+                required
               />
-              <FormField
-                control={form.control}
-                name="nome_responsavel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nome do Responsável</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ex: João Silva" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="cnpj" className="text-right">
+                CNPJ *
+              </Label>
+              <Input
+                id="cnpj"
+                value={cnpj}
+                onChange={(e) => setCnpj(formatCNPJ(e.target.value))}
+                className="col-span-3"
+                placeholder="00.000.000/0000-00"
+                maxLength={18}
+                required
               />
-              <FormField
-                control={form.control}
-                name="cnpj"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>CNPJ</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        onChange={(e) => {
-                          const formatted = formatCNPJ(e.target.value);
-                          field.onChange(formatted);
-                        }}
-                        maxLength={18}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="endereco" className="text-right">
+                Endereço
+              </Label>
+              <Input
+                id="endereco"
+                value={endereco}
+                onChange={(e) => setEndereco(e.target.value)}
+                className="col-span-3"
+                placeholder="Rua, Número, Bairro, Cidade - UF"
               />
-              <FormField
-                control={form.control}
-                name="email_contato"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email de Contato</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="contato@empresa.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            </div>
+
+            <div className="border-t my-2"></div>
+            <p className="text-sm font-medium text-muted-foreground mb-2">Dados do Responsável (Contrato)</p>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="resp_nome" className="text-right">
+                Nome Resp.
+              </Label>
+              <Input
+                id="resp_nome"
+                value={responsavelNome}
+                onChange={(e) => setResponsavelNome(e.target.value)}
+                className="col-span-3"
+                placeholder="Nome completo do assinante"
               />
-              <FormField
-                control={form.control}
-                name="telefone_contato"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Telefone de Contato</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        onChange={(e) => {
-                          const formatted = formatTelefone(e.target.value);
-                          field.onChange(formatted);
-                        }}
-                        maxLength={15}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="resp_cpf" className="text-right">
+                CPF Resp.
+              </Label>
+              <Input
+                id="resp_cpf"
+                value={responsavelCpf}
+                onChange={(e) => setResponsavelCpf(formatCPF(e.target.value))}
+                className="col-span-3"
+                placeholder="000.000.000-00"
+                maxLength={14}
               />
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={field.value}
-                      onChange={field.onChange}
-                    >
-                      <optgroup label="Funil CRM">
-                        <option value="sem_retorno">🔘 Sem Retorno</option>
-                        <option value="tratativa">💬 Em Tratativa</option>
-                        <option value="contrato_assinado">📝 Contrato Assinado</option>
-                        <option value="apolices_emitida">📄 Apólices Emitida</option>
-                        <option value="acolhimento">🤝 Acolhimento</option>
-                      </optgroup>
-                      <optgroup label="Status Final">
-                        <option value="ativa">✅ Ativa</option>
-                        <option value="inativa">⏸️ Inativa</option>
-                        <option value="cancelada">❌ Cancelada</option>
-                      </optgroup>
-                    </select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Cadastrando..." : "Cadastrar"}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={criarEmpresaMutation.isPending}>
+              {criarEmpresaMutation.isPending ? "Salvando..." : "Salvar Empresa"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
-};
+}
