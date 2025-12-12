@@ -343,7 +343,7 @@ export function ImportarColaboradoresDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[95vw] w-[1400px] max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Importar Lista de {competencia}</DialogTitle>
           <DialogDescription>Carregue o arquivo .xlsx. Esta lista será a verdade absoluta do mês.</DialogDescription>
