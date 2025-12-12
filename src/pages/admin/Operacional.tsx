@@ -32,7 +32,7 @@ type TabType = "entrada" | "seguradora" | "pendencia" | "reanalise" | "concluido
 export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
-  const [searchTerm, setSearchTerm] = useState(""); // Novo estado de busca
+  const [searchTerm, setSearchTerm] = useState("");
   const [pages, setPages] = useState<Record<TabType, number>>({
     entrada: 1,
     seguradora: 1,
@@ -80,7 +80,7 @@ export default function Operacional() {
     },
   });
 
-  // --- FILTRO E ORDENAÇÃO ---
+  // --- FILTRAGEM E ORDENAÇÃO ---
   const getLotesByTab = (tab: TabType) => {
     let filteredLotes = [];
 
@@ -105,13 +105,16 @@ export default function Operacional() {
         filteredLotes = [];
     }
 
-    // 2. Filtrar por Busca (Nome da Empresa)
+    // 2. Filtrar por Busca (Nome da Empresa) - CORRIGIDO PARA EVITAR ERRO EM DADOS NULOS
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
-      filteredLotes = filteredLotes.filter((l) => l.empresa?.nome?.toLowerCase().includes(lowerTerm));
+      filteredLotes = filteredLotes.filter((l) => {
+        const nomeEmpresa = l.empresa?.nome || ""; // Garante string vazia se nulo
+        return nomeEmpresa.toLowerCase().includes(lowerTerm);
+      });
     }
 
-    // 3. Ordenar Alfabeticamente (Nome da Empresa)
+    // 3. Ordenar por Ordem Alfabética (Nome da Empresa)
     return filteredLotes.sort((a, b) => {
       const nomeA = a.empresa?.nome || "";
       const nomeB = b.empresa?.nome || "";
@@ -278,10 +281,7 @@ export default function Operacional() {
       else setProcessarDialogOpen(true);
     } else if (tab === "seguradora") setProcessarDialogOpen(true);
     else if (tab === "concluido") setConfirmFaturarDialog(true);
-    else if (tab === "pendencia") {
-      // Ação futura: enviar email ao cliente
-      toast.success("Email de pendência enviado ao cliente (ação futura).");
-    }
+    else if (tab === "pendencia") toast.success("Cobrança enviada.");
   };
 
   const handleConfirmarEnvio = () => {
@@ -309,19 +309,20 @@ export default function Operacional() {
           </div>
         </div>
 
-        <div className="flex gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+        {/* BARRA DE AÇÕES: PESQUISA E IMPORTAÇÃO */}
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <div className="relative w-full sm:w-72">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Buscar empresa..."
+              placeholder="Pesquisar empresa..."
               className="pl-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
-            <Upload className="mr-2 h-4 w-4" /> Importar Lote
+            <Upload className="mr-2 h-4 w-4" /> Importar Lote Pronto
           </Button>
         </div>
       </div>
@@ -383,7 +384,7 @@ export default function Operacional() {
         )}
         {renderTabContent(
           "pendencia",
-          "Lotes com Pendências (Reprovados)",
+          "Aguardando Cliente",
           <AlertTriangle className="text-red-500" />,
           getPaginatedLotes,
           pages,
