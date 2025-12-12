@@ -70,7 +70,7 @@ export default function Operacional() {
         `,
         )
         .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido", "faturado"])
-        .order("created_at", { ascending: false }); // Ordem padrão do banco (Recente)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       return data as unknown as LoteOperacional[];
@@ -82,10 +82,8 @@ export default function Operacional() {
     .filter((l) => l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === "alfabetica") {
-        // A-Z pelo nome da empresa
         return (a.empresa?.nome || "").localeCompare(b.empresa?.nome || "");
       } else {
-        // Mais recentes primeiro (Data de Criação)
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       }
     });
@@ -105,7 +103,6 @@ export default function Operacional() {
     }
   };
 
-  // ... (Mutações permanecem iguais: enviar, reenviar, faturar) ...
   const enviarNovoMutation = useMutation({
     mutationFn: async (loteId: string) => {
       setActionLoading(loteId);
@@ -152,18 +149,17 @@ export default function Operacional() {
     },
   });
 
-  // ... (Função handleDownloadLote permanece igual) ...
+  // --- DOWNLOAD ---
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
       toast.info("Preparando download...");
 
-      // ALTERAÇÃO AQUI: Removemos o .eq("status_seguradora", "aprovado")
-      // Agora ele busca todos os colaboradores do lote, independente do estágio
+      // 1. Busca todos os itens do lote ordenados por data de criação (mais recente primeiro)
       const { data: itens, error } = await supabase
         .from("colaboradores_lote")
-        .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario")
+        .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario, created_at")
         .eq("lote_id", lote.id)
-        .order("nome");
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
 
@@ -171,6 +167,21 @@ export default function Operacional() {
         toast.warning("Não há colaboradores neste lote para baixar.");
         return;
       }
+
+      // 2. FILTRAGEM DE DUPLICATAS
+      // Mantém apenas a tentativa mais recente de cada CPF
+      const cpfsProcessados = new Set();
+      const itensUnicos = itens.filter((item) => {
+        const cpfLimpo = item.cpf.replace(/\D/g, "");
+        if (cpfsProcessados.has(cpfLimpo)) {
+          return false;
+        }
+        cpfsProcessados.add(cpfLimpo);
+        return true;
+      });
+
+      // 3. Ordenação Alfabética para o Excel
+      itensUnicos.sort((a, b) => a.nome.localeCompare(b.nome));
 
       let cnpj = (lote.empresa as any)?.cnpj || "";
       if (!cnpj && lote.empresa_id) {
@@ -181,8 +192,6 @@ export default function Operacional() {
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Lista Seguradora");
-
-      // Cabeçalho padrão
       const headers = [
         "NOME COMPLETO",
         "SEXO",
@@ -197,19 +206,16 @@ export default function Operacional() {
       const COL_WIDTH = 37.11;
       worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
 
-      // Estilização do Header
       headerRow.eachCell((cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
         cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
         cell.alignment = { horizontal: "center" };
       });
 
-      // Preenchimento das linhas
-      itens.forEach((c) => {
+      itensUnicos.forEach((c) => {
         let dataNascDate = null;
         if (c.data_nascimento) {
           const parts = c.data_nascimento.split("-");
-          // Garante parse correto YYYY-MM-DD
           if (parts.length === 3)
             dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
         }
@@ -224,19 +230,16 @@ export default function Operacional() {
           formatCNPJ(cnpj),
         ]);
 
-        // Formatação das células de dados
         if (dataNascDate) row.getCell(4).numFmt = "dd/mm/yyyy";
-        row.getCell(5).numFmt = "#,##0.00"; // Formato moeda/número
+        row.getCell(5).numFmt = "#,##0.00";
       });
 
-      // Gerar e baixar arquivo
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      // Nome do arquivo dinâmico
-      a.download = `LISTA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
+      a.download = `SEGURADORA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success("Download concluído.");
@@ -280,9 +283,7 @@ export default function Operacional() {
           </div>
         </div>
 
-        {/* Controles: Busca, Ordenação e Importação */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-          {/* Busca */}
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -296,7 +297,6 @@ export default function Operacional() {
             />
           </div>
 
-          {/* Ordenação */}
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortType)}>
             <SelectTrigger className="w-full md:w-[180px] bg-background">
               <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
@@ -308,7 +308,6 @@ export default function Operacional() {
             </SelectContent>
           </Select>
 
-          {/* Importar */}
           <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" /> Importar
           </Button>
