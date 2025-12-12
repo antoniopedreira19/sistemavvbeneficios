@@ -5,7 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Building2, Clock, AlertTriangle, CheckCircle2, Inbox, Upload, Search, ArrowUpDown } from "lucide-react";
+import {
+  Building2,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Inbox,
+  Upload,
+  Search,
+  ArrowUpDown,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +27,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { LotesTable, LoteOperacional } from "@/components/admin/operacional/LotesTable";
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
@@ -69,7 +84,13 @@ export default function Operacional() {
           obra:obras(id, nome) 
         `,
         )
-        .in("status", ["aguardando_processamento", "em_analise_seguradora", "com_pendencia", "concluido", "faturado"])
+        .in("status", [
+          "aguardando_processamento",
+          "em_analise_seguradora",
+          "com_pendencia",
+          "concluido",
+          "faturado",
+        ])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -79,7 +100,9 @@ export default function Operacional() {
 
   // --- Lógica de Filtragem e Ordenação Dinâmica ---
   const filteredLotes = lotes
-    .filter((l) => l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((l) =>
+      l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
     .sort((a, b) => {
       if (sortBy === "alfabetica") {
         return (a.empresa?.nome || "").localeCompare(b.empresa?.nome || "");
@@ -123,7 +146,7 @@ export default function Operacional() {
 
         // 2. Filtrar Duplicatas (Manter apenas o mais recente)
         const cpfsProcessados = new Set();
-        const itensUnicos = itens.filter((item) => {
+        const itensUnicos = itens.filter(item => {
           const cpfLimpo = item.cpf.replace(/\D/g, "");
           if (cpfsProcessados.has(cpfLimpo)) return false;
           cpfsProcessados.add(cpfLimpo);
@@ -140,15 +163,7 @@ export default function Operacional() {
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Lista Seguradora");
-        const headers = [
-          "NOME COMPLETO",
-          "SEXO",
-          "CPF",
-          "DATA NASCIMENTO",
-          "SALARIO",
-          "CLASSIFICACAO SALARIAL",
-          "CNPJ DA EMPRESA",
-        ];
+        const headers = ["NOME COMPLETO", "SEXO", "CPF", "DATA NASCIMENTO", "SALARIO", "CLASSIFICACAO SALARIAL", "CNPJ DA EMPRESA"];
         const headerRow = worksheet.addRow(headers);
 
         // Estilização
@@ -164,17 +179,11 @@ export default function Operacional() {
           let dataNascDate = null;
           if (c.data_nascimento) {
             const parts = c.data_nascimento.split("-");
-            if (parts.length === 3)
-              dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            if (parts.length === 3) dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
           }
           const row = worksheet.addRow([
-            c.nome?.toUpperCase(),
-            c.sexo,
-            formatCPF(c.cpf),
-            dataNascDate,
-            c.salario ? Number(c.salario) : 0,
-            c.classificacao_salario,
-            formatCNPJ(cnpj),
+            c.nome?.toUpperCase(), c.sexo, formatCPF(c.cpf), dataNascDate,
+            c.salario ? Number(c.salario) : 0, c.classificacao_salario, formatCNPJ(cnpj)
           ]);
           if (dataNascDate) row.getCell(4).numFmt = "dd/mm/yyyy";
           row.getCell(5).numFmt = "#,##0.00";
@@ -183,31 +192,42 @@ export default function Operacional() {
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 
-        // 4. Upload para o Supabase Storage
-        // Nota: Assumindo bucket 'contratos' e pasta 'lotes'
-        const fileName = `lotes/${lote.id}_${Date.now()}.xlsx`;
+        // 4. Personalizar Nome do Arquivo
+        const nomeEmpresaRaw = lote.empresa?.nome || "EMPRESA";
+        const nomeEmpresaLimpo = nomeEmpresaRaw
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-zA-Z0-9\s]/g, "")
+          .trim()
+          .replace(/\s+/g, "_")
+          .toUpperCase();
+
+        const competenciaLimpa = lote.competencia.replace(/\//g, "-");
+        const fileName = `lotes/LISTA_${nomeEmpresaLimpo}_${competenciaLimpa}.xlsx`;
+
+        // 5. Upload para o Supabase Storage
         const { error: uploadError } = await supabase.storage
-          .from("contratos")
+          .from('contratos')
           .upload(fileName, blob, { upsert: true });
 
         if (uploadError) throw uploadError;
 
-        // 5. Pegar a URL Pública
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("contratos").getPublicUrl(fileName);
+        // 6. Pegar a URL Pública
+        const { data: { publicUrl } } = supabase.storage
+          .from('contratos')
+          .getPublicUrl(fileName);
 
-        // 6. Atualizar Banco de Dados (Isso dispara o Webhook)
+        // 7. Atualizar Banco de Dados (Isso dispara o Webhook)
         const { error: updateError } = await supabase
           .from("lotes_mensais")
           .update({
             status: "em_analise_seguradora",
             enviado_seguradora_em: new Date().toISOString(),
-            arquivo_url: publicUrl,
+            arquivo_url: publicUrl
           })
           .eq("id", lote.id);
 
         if (updateError) throw updateError;
+
       } catch (error: any) {
         throw error;
       }
@@ -254,6 +274,7 @@ export default function Operacional() {
     try {
       toast.info("Preparando download...");
 
+      // 1. Busca todos os itens do lote ordenados por data de criação (mais recente primeiro)
       const { data: itens, error } = await supabase
         .from("colaboradores_lote")
         .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario, created_at")
@@ -267,9 +288,9 @@ export default function Operacional() {
         return;
       }
 
-      // FILTRAGEM DE DUPLICATAS
+      // 2. FILTRAGEM DE DUPLICATAS
       const cpfsProcessados = new Set();
-      const itensUnicos = itens.filter((item) => {
+      const itensUnicos = itens.filter(item => {
         const cpfLimpo = item.cpf.replace(/\D/g, "");
         if (cpfsProcessados.has(cpfLimpo)) {
           return false;
@@ -278,7 +299,7 @@ export default function Operacional() {
         return true;
       });
 
-      // Ordenação Alfabética
+      // 3. Ordenação Alfabética para o Excel
       itensUnicos.sort((a, b) => a.nome.localeCompare(b.nome));
 
       let cnpj = (lote.empresa as any)?.cnpj || "";
@@ -382,6 +403,7 @@ export default function Operacional() {
           </div>
         </div>
 
+        {/* Controles: Busca, Ordenação e Importação */}
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
           <div className="relative w-full md:w-64">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
