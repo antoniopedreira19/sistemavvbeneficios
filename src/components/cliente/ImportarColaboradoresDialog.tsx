@@ -8,12 +8,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, XCircle, UserMinus, Info } from "lucide-react";
+import { FileSpreadsheet, Upload, Download, AlertCircle, CheckCircle, UserMinus, Info, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { validateCPF, formatCPF } from "@/lib/validators";
+import { validateCPF } from "@/lib/validators";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
@@ -25,6 +24,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { EditableColaboradorRow } from "@/components/shared/EditableColaboradorRow";
 
 const ITEMS_PER_PAGE = 50;
 
@@ -407,39 +407,52 @@ export function ImportarColaboradoresDialog({
                 )}
               </div>
 
+              {/* Aviso de edição para erros */}
+              {validatedRows.some((r) => r.status === "erro") && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Pencil className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800">Edição Disponível</AlertTitle>
+                  <AlertDescription className="text-blue-700">
+                    Clique no ícone de lápis nas linhas inválidas para corrigir os dados diretamente.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Tabela Paginada */}
               <div className="rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px]">Ln</TableHead>
-                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="w-[80px]">Status</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
-                      <TableHead>Detalhes</TableHead>
+                      <TableHead>Sexo</TableHead>
+                      <TableHead>Nascimento</TableHead>
+                      <TableHead>Salário</TableHead>
+                      <TableHead>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedRows.map((row, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>{row.linha}</TableCell>
-                        <TableCell>
-                          {row.status === "novo" && <Badge className="bg-green-500">Novo</Badge>}
-                          {row.status === "atualizado" && <Badge variant="secondary">Atualizado</Badge>}
-                          {row.status === "erro" && <Badge variant="destructive">Erro</Badge>}
-                        </TableCell>
-                        <TableCell className="font-medium">{row.nome}</TableCell>
-                        <TableCell>{formatCPF(row.cpf)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {row.status === "erro" &&
-                            row.erros?.map((e, i) => (
-                              <div key={i} className="text-red-500">
-                                • {e}
-                              </div>
-                            ))}
-                          {row.status === "atualizado" && row.alteracoes?.map((a, i) => <div key={i}>• {a}</div>)}
-                        </TableCell>
-                      </TableRow>
+                      <EditableColaboradorRow
+                        key={`${row.cpf}-${idx}`}
+                        colaborador={row}
+                        showSalary={true}
+                        onSave={(updatedData) => {
+                          const newRows = [...validatedRows];
+                          const originalIdx = validatedRows.findIndex((r) => r.linha === row.linha);
+                          if (originalIdx !== -1) {
+                            newRows[originalIdx] = {
+                              ...newRows[originalIdx],
+                              ...updatedData,
+                              status: "novo",
+                              erros: undefined,
+                            };
+                            setValidatedRows(newRows);
+                          }
+                        }}
+                      />
                     ))}
                   </TableBody>
                 </Table>
