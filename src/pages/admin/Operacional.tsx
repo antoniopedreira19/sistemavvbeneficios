@@ -156,16 +156,19 @@ export default function Operacional() {
   const handleDownloadLote = async (lote: LoteOperacional) => {
     try {
       toast.info("Preparando download...");
+
+      // ALTERAÇÃO AQUI: Removemos o .eq("status_seguradora", "aprovado")
+      // Agora ele busca todos os colaboradores do lote, independente do estágio
       const { data: itens, error } = await supabase
         .from("colaboradores_lote")
         .select("nome, sexo, cpf, data_nascimento, salario, classificacao_salario")
         .eq("lote_id", lote.id)
-        .eq("status_seguradora", "aprovado")
         .order("nome");
 
       if (error) throw error;
+
       if (!itens || itens.length === 0) {
-        toast.warning("Lote vazio.");
+        toast.warning("Não há colaboradores neste lote para baixar.");
         return;
       }
 
@@ -178,6 +181,8 @@ export default function Operacional() {
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Lista Seguradora");
+
+      // Cabeçalho padrão
       const headers = [
         "NOME COMPLETO",
         "SEXO",
@@ -192,45 +197,52 @@ export default function Operacional() {
       const COL_WIDTH = 37.11;
       worksheet.columns = headers.map(() => ({ width: COL_WIDTH }));
 
+      // Estilização do Header
       headerRow.eachCell((cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF203455" } };
         cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
         cell.alignment = { horizontal: "center" };
       });
 
+      // Preenchimento das linhas
       itens.forEach((c) => {
         let dataNascDate = null;
         if (c.data_nascimento) {
           const parts = c.data_nascimento.split("-");
+          // Garante parse correto YYYY-MM-DD
           if (parts.length === 3)
             dataNascDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
         }
 
         const row = worksheet.addRow([
-          c.nome.toUpperCase(),
-          c.sexo,
-          formatCPF(c.cpf),
+          c.nome ? c.nome.toUpperCase() : "",
+          c.sexo || "Masculino",
+          c.cpf ? formatCPF(c.cpf) : "",
           dataNascDate,
-          Number(c.salario),
-          c.classificacao_salario,
+          c.salario ? Number(c.salario) : 0,
+          c.classificacao_salario || "",
           formatCNPJ(cnpj),
         ]);
+
+        // Formatação das células de dados
         if (dataNascDate) row.getCell(4).numFmt = "dd/mm/yyyy";
-        row.getCell(5).numFmt = "#,##0.00";
+        row.getCell(5).numFmt = "#,##0.00"; // Formato moeda/número
       });
 
+      // Gerar e baixar arquivo
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `SEGURADORA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
+      // Nome do arquivo dinâmico
+      a.download = `LISTA_${lote.empresa?.nome.replace(/[^a-zA-Z0-9]/g, "")}_${lote.competencia.replace("/", "-")}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success("Download concluído.");
     } catch (e: any) {
       console.error(e);
-      toast.error("Erro: " + e.message);
+      toast.error("Erro ao gerar planilha: " + e.message);
     }
   };
 
