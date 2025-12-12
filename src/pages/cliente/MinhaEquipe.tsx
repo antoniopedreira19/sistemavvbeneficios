@@ -1,417 +1,290 @@
 import { useState } from "react";
-import {
-  Users,
-  Search,
-  Plus,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Upload,
-  Info,
-  Pencil,
-  Building,
-} from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { useUserRole } from "@/hooks/useUserRole";
-import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { Users, Search, UserPlus, Trash2, FileSpreadsheet, Pencil, UserX, RefreshCw } from "lucide-react";
 
-// Imports dos Dialogs
+import { NovoColaboradorDialog } from "@/components/cliente/NovoColaboradorDialog";
 import { ImportarColaboradoresDialog } from "@/components/cliente/ImportarColaboradoresDialog";
 import { EditarColaboradorDialog } from "@/components/cliente/EditarColaboradorDialog";
-import { NovoColaboradorDialog } from "@/components/cliente/NovoColaboradorDialog";
-import { GerenciarObrasDialog } from "@/components/cliente/GerenciarObrasDialog";
+import { formatCPF, formatCurrency } from "@/lib/utils";
 
-const ITEMS_PER_PAGE = 10;
-
-const MinhaEquipe = () => {
-  const { profile, loading: profileLoading } = useUserRole();
-  const empresaId = profile?.empresa_id;
+export default function MinhaEquipe() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedObra, setSelectedObra] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [showDesligados, setShowDesligados] = useState(false);
 
-  // Estados dos Modais
-  const [isNovoColaboradorOpen, setIsNovoColaboradorOpen] = useState(false);
-  const [isGerenciarObrasOpen, setIsGerenciarObrasOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [isSelectObraDialogOpen, setIsSelectObraDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  // Dialogs
+  const [novoColaboradorOpen, setNovoColaboradorOpen] = useState(false);
+  const [importarOpen, setImportarOpen] = useState(false);
+  const [colaboradorParaEditar, setColaboradorParaEditar] = useState<any | null>(null);
+  const [colaboradorParaDesligar, setColaboradorParaDesligar] = useState<any | null>(null);
 
-  const [obraParaImportar, setObraParaImportar] = useState<string | null>(null);
-  const [colaboradorParaEditar, setColaboradorParaEditar] = useState<any>(null);
-
-  // Competência
-  const now = new Date();
-  const competenciaAtual = now.toLocaleString("pt-BR", { month: "long", year: "numeric" });
-  const competenciaCapitalized = competenciaAtual.charAt(0).toUpperCase() + competenciaAtual.slice(1);
-
-  // 1. Buscar Obras
-  const { data: obras, isLoading: obrasLoading } = useQuery({
-    queryKey: ["obras", empresaId],
+  // --- QUERY ---
+  const { data: colaboradores = [], isLoading } = useQuery({
+    queryKey: ["minha-equipe", user?.id, showDesligados], // Recarrega quando muda o filtro
+    enabled: !!user,
     queryFn: async () => {
-      if (!empresaId) return [];
-      const { data, error } = await supabase
-        .from("obras")
-        .select("id, nome")
-        .eq("empresa_id", empresaId)
-        .eq("status", "ativa")
-        .order("nome");
+      // 1. Pega ID da empresa do usuário
+      const { data: perfil } = await supabase.from("perfis").select("empresa_id").eq("id", user!.id).single();
+
+      if (!perfil?.empresa_id) return [];
+
+      // 2. Monta a query
+      let query = supabase.from("colaboradores").select("*").eq("empresa_id", perfil.empresa_id).order("nome");
+
+      // 3. Aplica o filtro de status
+      if (!showDesligados) {
+        query = query.eq("status", "ativo");
+      } else {
+        // Se mostrar desligados, traz tudo, mas ordenamos ativos primeiro
+        query = query.in("status", ["ativo", "desligado"]);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      return data;
     },
-    enabled: !!empresaId,
   });
 
-  // 2. Buscar Colaboradores (Apenas Ativos)
-  const { data: colaboradoresData, isLoading: colaboradoresLoading } = useQuery({
-    queryKey: ["colaboradores", empresaId, selectedObra, searchTerm, currentPage],
-    queryFn: async () => {
-      if (!empresaId) return { data: [], count: 0 };
-      let query = supabase
+  // --- MUTATION: DESLIGAR (SOFT DELETE) ---
+  const desligarMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
         .from("colaboradores")
-        .select("*, obras(nome)", { count: "exact" })
-        .eq("empresa_id", empresaId)
-        .eq("status", "ativo"); // Filtro para ocultar desligados
-
-      if (selectedObra !== "all") query = query.eq("obra_id", selectedObra);
-      if (searchTerm) query = query.or(`nome.ilike.%${searchTerm}%,cpf.ilike.%${searchTerm}%`);
-
-      const from = (currentPage - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
-
-      const { data, error, count } = await query.order("nome").range(from, to);
+        .update({
+          status: "desligado",
+          // Opcional: Se você tiver um campo data_desligamento no banco, descomente abaixo
+          // data_desligamento: new Date().toISOString()
+        })
+        .eq("id", id);
       if (error) throw error;
-      return { data: data || [], count: count || 0 };
     },
-    enabled: !!empresaId,
+    onSuccess: () => {
+      toast.success("Colaborador desligado com sucesso.");
+      queryClient.invalidateQueries({ queryKey: ["minha-equipe"] });
+      setColaboradorParaDesligar(null);
+    },
+    onError: (e: any) => {
+      toast.error("Erro ao desligar: " + e.message);
+    },
   });
 
-  // 3. Stats
-  const { data: stats } = useQuery({
-    queryKey: ["colaboradores-stats", empresaId],
-    queryFn: async () => {
-      if (!empresaId) return { ativos: 0, afastados: 0 };
-
-      const { count: ativos } = await supabase
-        .from("colaboradores")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", empresaId)
-        .eq("status", "ativo")
-        .eq("afastado", false);
-
-      const { count: afastados } = await supabase
-        .from("colaboradores")
-        .select("*", { count: "exact", head: true })
-        .eq("empresa_id", empresaId)
-        .eq("afastado", true); // Afastados geralmente contam como ativos no sistema mas com flag
-
-      return { ativos: ativos || 0, afastados: afastados || 0 };
+  // --- MUTATION: REATIVAR (BÔNUS) ---
+  const reativarMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("colaboradores").update({ status: "ativo" }).eq("id", id);
+      if (error) throw error;
     },
-    enabled: !!empresaId,
+    onSuccess: () => {
+      toast.success("Colaborador reativado!");
+      queryClient.invalidateQueries({ queryKey: ["minha-equipe"] });
+    },
   });
 
-  const colaboradores = colaboradoresData?.data || [];
-  const totalCount = colaboradoresData?.count || 0;
-  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-
-  const formatCurrency = (val: number) => val?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "-";
-
-  const getStatusBadge = (colaborador: any) => {
-    if (colaborador.afastado)
-      return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-200">Afastado</Badge>;
-    if (colaborador.status === "ativo")
-      return <Badge className="bg-green-100 text-green-700 hover:bg-green-200">Ativo</Badge>;
-    return <Badge className="bg-red-100 text-red-700 hover:bg-red-200">Desligado</Badge>;
-  };
-
-  const handleImportSuccess = () => {
-    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
-    queryClient.invalidateQueries({ queryKey: ["colaboradores-stats"] });
-  };
-
-  if (profileLoading)
-    return (
-      <div className="flex justify-center h-64 items-center">
-        <Loader2 className="animate-spin" />
-      </div>
-    );
+  // Filtragem no Frontend (Busca por nome/CPF)
+  const filteredColaboradores = colaboradores.filter(
+    (c) => c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || c.cpf.includes(searchTerm),
+  );
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           <Users className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold">Minha Equipe</h1>
-            <p className="text-muted-foreground">Gestão de colaboradores e obras</p>
+            <h1 className="text-3xl font-bold">Minha Equipe</h1>
+            <p className="text-muted-foreground">Gerencie seus colaboradores ativos e desligados</p>
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          {/* BOTÃO GERENCIAR OBRAS */}
-          <Button variant="outline" onClick={() => setIsGerenciarObrasOpen(true)} className="gap-2">
-            <Building className="h-4 w-4" /> Obras
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" onClick={() => setImportarOpen(true)}>
+            <FileSpreadsheet className="mr-2 h-4 w-4" /> Importar Planilha
           </Button>
-
-          <Button variant="outline" onClick={() => setIsSelectObraDialogOpen(true)} className="gap-2">
-            <Upload className="h-4 w-4" /> Importar Lista
-          </Button>
-
-          <Button onClick={() => setIsNovoColaboradorOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> Novo Colaborador
+          <Button onClick={() => setNovoColaboradorOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" /> Novo Colaborador
           </Button>
         </div>
       </div>
 
-      {/* Info Alert */}
-      <Alert className="bg-blue-50 border-blue-200">
-        <Info className="h-4 w-4 text-blue-600" />
-        <AlertDescription className="text-blue-800">
-          Para enviar a movimentação do mês, clique em <strong>Importar Lista</strong>. Isso atualizará sua base e
-          desligará automaticamente quem não estiver no arquivo.
-        </AlertDescription>
-      </Alert>
-
-      {/* Resumo Estatístico - Sem Card Total */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Ativos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats?.ativos}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Afastados</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats?.afastados}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filtros */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome ou CPF..."
-                className="pl-10"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-            </div>
-            <div className="sm:w-64">
-              <Select
-                value={selectedObra}
-                onValueChange={(v) => {
-                  setSelectedObra(v);
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger>
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Filtrar por obra" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as Obras</SelectItem>
-                  {obras?.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <CardTitle>Colaboradores ({filteredColaboradores.length})</CardTitle>
+
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              {/* Toggle Mostrar Desligados */}
+              <div className="flex items-center space-x-2 bg-secondary/30 p-2 rounded-lg border">
+                <Switch id="show-desligados" checked={showDesligados} onCheckedChange={setShowDesligados} />
+                <Label htmlFor="show-desligados" className="cursor-pointer text-sm font-medium">
+                  Mostrar Desligados
+                </Label>
+              </div>
+
+              {/* Busca */}
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar nome ou CPF..."
+                  className="pl-8"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabela */}
-      <Card>
-        <CardContent className="pt-6">
-          {colaboradoresLoading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="animate-spin" />
-            </div>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>CPF</TableHead>
+                  <TableHead>Cargo/Função</TableHead>
+                  <TableHead>Salário</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
                   <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Cargo</TableHead>
-                    <TableHead>Salário</TableHead>
-                    <TableHead>Obra</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead></TableHead>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      Carregando equipe...
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {colaboradores.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhum colaborador ativo encontrado.
+                ) : filteredColaboradores.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      Nenhum colaborador encontrado.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredColaboradores.map((colaborador) => (
+                    <TableRow
+                      key={colaborador.id}
+                      className={colaborador.status === "desligado" ? "bg-muted/50 opacity-70" : ""}
+                    >
+                      <TableCell className="font-medium">{colaborador.nome}</TableCell>
+                      <TableCell>{formatCPF(colaborador.cpf)}</TableCell>
+                      <TableCell>{colaborador.funcao || "-"}</TableCell>
+                      <TableCell>{colaborador.salario ? formatCurrency(colaborador.salario) : "-"}</TableCell>
+                      <TableCell className="text-center">
+                        {colaborador.status === "ativo" ? (
+                          <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                            Ativo
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Desligado</Badge>
+                        )}
                       </TableCell>
-                    </TableRow>
-                  ) : (
-                    colaboradores.map((colab: any) => (
-                      <TableRow key={colab.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">{colab.nome}</TableCell>
-                        <TableCell className="text-muted-foreground">{colab.cpf}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{colab.cargo || "-"}</Badge>
-                        </TableCell>
-                        <TableCell>{formatCurrency(colab.salario)}</TableCell>
-                        <TableCell className="text-muted-foreground">{colab.obras?.nome || "-"}</TableCell>
-                        <TableCell>{getStatusBadge(colab)}</TableCell>
-                        <TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => {
-                              setColaboradorParaEditar(colab);
-                              setIsEditDialogOpen(true);
-                            }}
+                            onClick={() => setColaboradorParaEditar(colaborador)}
+                            title="Editar"
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className="h-4 w-4 text-blue-600" />
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-              {totalCount > ITEMS_PER_PAGE && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <span className="text-sm text-muted-foreground">
-                    Página {currentPage} de {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+
+                          {colaborador.status === "ativo" ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setColaboradorParaDesligar(colaborador)}
+                              title="Desligar Colaborador"
+                            >
+                              <UserX className="h-4 w-4 text-red-600" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => reativarMutation.mutate(colaborador.id)}
+                              title="Reativar Colaborador"
+                            >
+                              <RefreshCw className="h-4 w-4 text-green-600" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
-      {/* --- MODAIS --- */}
+      {/* Dialogs */}
+      <NovoColaboradorDialog
+        open={novoColaboradorOpen}
+        onOpenChange={setNovoColaboradorOpen}
+        empresaId="" // O hook interno vai pegar
+      />
 
-      {/* 1. Gerenciar Obras (Criar/Remover) */}
-      {empresaId && (
-        <GerenciarObrasDialog
-          open={isGerenciarObrasOpen}
-          onOpenChange={setIsGerenciarObrasOpen}
-          empresaId={empresaId}
-        />
-      )}
+      <ImportarColaboradoresDialog
+        open={importarOpen}
+        onOpenChange={setImportarOpen}
+        empresaId="" // O hook vai resolver
+        obraId=""
+        competencia="Base"
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["minha-equipe"] })}
+      />
 
-      {/* 2. Novo Colaborador */}
-      {empresaId && (
-        <NovoColaboradorDialog
-          open={isNovoColaboradorOpen}
-          onOpenChange={setIsNovoColaboradorOpen}
-          empresaId={empresaId}
-          obras={obras || []}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
-            queryClient.invalidateQueries({ queryKey: ["colaboradores-stats"] });
-          }}
-        />
-      )}
-
-      {/* 3. Seleção de Obra para Importar */}
-      <Dialog open={isSelectObraDialogOpen} onOpenChange={setIsSelectObraDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Selecionar Obra</DialogTitle>
-            <DialogDescription>Para qual obra você vai importar a lista?</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-4">
-            {obras && obras.length > 0 ? (
-              obras.map((o) => (
-                <Button
-                  key={o.id}
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3"
-                  onClick={() => {
-                    setObraParaImportar(o.id);
-                    setIsSelectObraDialogOpen(false);
-                    setIsImportDialogOpen(true);
-                  }}
-                >
-                  <Users className="h-4 w-4 mr-2" /> {o.nome}
-                </Button>
-              ))
-            ) : (
-              <div className="text-center text-muted-foreground">Nenhuma obra encontrada.</div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 4. Importar Excel */}
-      {empresaId && obraParaImportar && (
-        <ImportarColaboradoresDialog
-          open={isImportDialogOpen}
-          onOpenChange={setIsImportDialogOpen}
-          empresaId={empresaId}
-          obraId={obraParaImportar}
-          competencia={competenciaCapitalized}
-          onSuccess={handleImportSuccess}
-        />
-      )}
-
-      {/* 5. Editar Colaborador */}
       {colaboradorParaEditar && (
         <EditarColaboradorDialog
           colaborador={colaboradorParaEditar}
-          open={isEditDialogOpen}
-          onOpenChange={setIsEditDialogOpen}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
-            setIsEditDialogOpen(false);
-          }}
+          open={!!colaboradorParaEditar}
+          onOpenChange={(open) => !open && setColaboradorParaEditar(null)}
         />
       )}
+
+      <AlertDialog open={!!colaboradorParaDesligar} onOpenChange={(o) => !o && setColaboradorParaDesligar(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desligar Colaborador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja desligar <strong>{colaboradorParaDesligar?.nome}</strong>?<br />
+              Ele deixará de aparecer nas listas ativas e no faturamento futuro, mas o histórico será mantido.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => colaboradorParaDesligar && desligarMutation.mutate(colaboradorParaDesligar.id)}
+            >
+              Confirmar Desligamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
-};
-
-export default MinhaEquipe;
+}
