@@ -44,11 +44,23 @@ export function EditableColaboradorRow({
   showSalary = true,
 }: EditableColaboradorRowProps) {
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Check if date is valid (YYYY-MM-DD format with reasonable year)
+  const isValidDate = (date: string) => {
+    const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return false;
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]);
+    const day = parseInt(match[3]);
+    return year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
+  };
+
   const [editData, setEditData] = useState({
     nome: colaborador.nome,
     cpf: colaborador.cpf,
     sexo: colaborador.sexo,
-    data_nascimento: colaborador.data_nascimento,
+    // If date is invalid, start with empty string so user sees empty date picker
+    data_nascimento: isValidDate(colaborador.data_nascimento) ? colaborador.data_nascimento : "",
     salario: colaborador.salario,
   });
   const [validation, setValidation] = useState<FieldValidation>({
