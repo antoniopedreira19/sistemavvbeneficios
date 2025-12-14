@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download, Trash2, Loader2 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
@@ -50,7 +50,7 @@ const STATUS_BADGE_VARIANTS: Record<string, string> = {
 };
 
 const EmpresaDetailDialog = ({
-  empresa: empresaFromProps,
+  empresa,
   open,
   onOpenChange,
   statusLabels,
@@ -63,25 +63,6 @@ const EmpresaDetailDialog = ({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const queryClient = useQueryClient();
-
-  // Buscar dados ATUALIZADOS da empresa ao abrir dialog
-  const { data: empresaFresh } = useQuery({
-    queryKey: ["empresa-detail", empresaFromProps?.id],
-    queryFn: async () => {
-      if (!empresaFromProps?.id) return null;
-      const { data, error } = await supabase
-        .from("empresas")
-        .select("*")
-        .eq("id", empresaFromProps.id)
-        .single();
-      if (error) throw error;
-      return data as EmpresaCRM;
-    },
-    enabled: open && !!empresaFromProps?.id,
-  });
-
-  // Usa dados frescos quando disponíveis, fallback para props
-  const empresa = empresaFresh || empresaFromProps;
 
   const handleDownloadContrato = async () => {
     if (!empresa?.contrato_url) return;
@@ -116,10 +97,10 @@ const EmpresaDetailDialog = ({
   };
 
   useEffect(() => {
-    if (open && empresaFromProps?.id) {
+    if (open && empresa) {
       fetchCompetencias();
     }
-  }, [open, empresaFromProps?.id]);
+  }, [open, empresa?.id]);
 
   const fetchCompetencias = async () => {
     if (!empresa) return;
@@ -246,38 +227,13 @@ const EmpresaDetailDialog = ({
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide flex items-center gap-1">
                   <User className="h-3 w-3" />
-                  Responsável(is)
+                  Responsável
                 </Label>
-                {(() => {
-                  // Fetch fresh data from empresaForEdit which has the raw data
-                  const nomes = Array.isArray((empresa as any).responsavel_nome) 
-                    ? (empresa as any).responsavel_nome 
-                    : [];
-                  const cpfs = Array.isArray((empresa as any).responsavel_cpf) 
-                    ? (empresa as any).responsavel_cpf 
-                    : [];
-                  
-                  if (nomes.length === 0) {
-                    return (
-                      <span className="text-muted-foreground italic">Não informado</span>
-                    );
-                  }
-                  
-                  return (
-                    <div className="space-y-1">
-                      {nomes.map((nome: string, idx: number) => (
-                        <p key={idx} className="text-foreground text-sm">
-                          {nome}
-                          {cpfs[idx] && (
-                            <span className="text-muted-foreground ml-2">
-                              (CPF: {cpfs[idx]})
-                            </span>
-                          )}
-                        </p>
-                      ))}
-                    </div>
-                  );
-                })()}
+                <p className="text-foreground">
+                  {empresa.nome_responsavel || (
+                    <span className="text-muted-foreground italic">Não informado</span>
+                  )}
+                </p>
               </div>
 
               <div className="space-y-2">

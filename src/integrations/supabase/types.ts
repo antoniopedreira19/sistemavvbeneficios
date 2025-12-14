@@ -291,12 +291,9 @@ export type Database = {
           created_at: string
           email_contato: string | null
           emails_contato: Json | null
-          endereco: string | null
           id: string
           nome: string
           nome_responsavel: string | null
-          responsavel_cpf: Json | null
-          responsavel_nome: Json | null
           status: Database["public"]["Enums"]["empresa_status"]
           telefone_contato: string | null
           telefones_contato: Json | null
@@ -308,12 +305,9 @@ export type Database = {
           created_at?: string
           email_contato?: string | null
           emails_contato?: Json | null
-          endereco?: string | null
           id?: string
           nome: string
           nome_responsavel?: string | null
-          responsavel_cpf?: Json | null
-          responsavel_nome?: Json | null
           status?: Database["public"]["Enums"]["empresa_status"]
           telefone_contato?: string | null
           telefones_contato?: Json | null
@@ -325,12 +319,9 @@ export type Database = {
           created_at?: string
           email_contato?: string | null
           emails_contato?: Json | null
-          endereco?: string | null
           id?: string
           nome?: string
           nome_responsavel?: string | null
-          responsavel_cpf?: Json | null
-          responsavel_nome?: Json | null
           status?: Database["public"]["Enums"]["empresa_status"]
           telefone_contato?: string | null
           telefones_contato?: Json | null
