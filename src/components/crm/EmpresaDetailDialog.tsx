@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download, Trash2, Loader2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
@@ -50,7 +50,7 @@ const STATUS_BADGE_VARIANTS: Record<string, string> = {
 };
 
 const EmpresaDetailDialog = ({
-  empresa,
+  empresa: empresaFromProps,
   open,
   onOpenChange,
   statusLabels,
@@ -63,6 +63,25 @@ const EmpresaDetailDialog = ({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const queryClient = useQueryClient();
+
+  // Buscar dados ATUALIZADOS da empresa ao abrir dialog
+  const { data: empresaFresh } = useQuery({
+    queryKey: ["empresa-detail", empresaFromProps?.id],
+    queryFn: async () => {
+      if (!empresaFromProps?.id) return null;
+      const { data, error } = await supabase
+        .from("empresas")
+        .select("*")
+        .eq("id", empresaFromProps.id)
+        .single();
+      if (error) throw error;
+      return data as EmpresaCRM;
+    },
+    enabled: open && !!empresaFromProps?.id,
+  });
+
+  // Usa dados frescos quando disponíveis, fallback para props
+  const empresa = empresaFresh || empresaFromProps;
 
   const handleDownloadContrato = async () => {
     if (!empresa?.contrato_url) return;
@@ -97,10 +116,10 @@ const EmpresaDetailDialog = ({
   };
 
   useEffect(() => {
-    if (open && empresa) {
+    if (open && empresaFromProps?.id) {
       fetchCompetencias();
     }
-  }, [open, empresa?.id]);
+  }, [open, empresaFromProps?.id]);
 
   const fetchCompetencias = async () => {
     if (!empresa) return;
