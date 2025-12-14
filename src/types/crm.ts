@@ -15,6 +15,9 @@ export interface EmpresaCRM {
   email_contato: string | null;
   telefone_contato: string | null;
   nome_responsavel: string | null;
+  responsavel_nome: string[] | null;
+  responsavel_cpf: string[] | null;
+  endereco: string | null;
   status: EmpresaStatus;
   created_at: string;
   emails_contato?: string[];
