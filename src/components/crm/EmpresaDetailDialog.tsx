@@ -227,13 +227,38 @@ const EmpresaDetailDialog = ({
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide flex items-center gap-1">
                   <User className="h-3 w-3" />
-                  Responsável
+                  Responsável(is)
                 </Label>
-                <p className="text-foreground">
-                  {empresa.nome_responsavel || (
-                    <span className="text-muted-foreground italic">Não informado</span>
-                  )}
-                </p>
+                {(() => {
+                  // Fetch fresh data from empresaForEdit which has the raw data
+                  const nomes = Array.isArray((empresa as any).responsavel_nome) 
+                    ? (empresa as any).responsavel_nome 
+                    : [];
+                  const cpfs = Array.isArray((empresa as any).responsavel_cpf) 
+                    ? (empresa as any).responsavel_cpf 
+                    : [];
+                  
+                  if (nomes.length === 0) {
+                    return (
+                      <span className="text-muted-foreground italic">Não informado</span>
+                    );
+                  }
+                  
+                  return (
+                    <div className="space-y-1">
+                      {nomes.map((nome: string, idx: number) => (
+                        <p key={idx} className="text-foreground text-sm">
+                          {nome}
+                          {cpfs[idx] && (
+                            <span className="text-muted-foreground ml-2">
+                              (CPF: {cpfs[idx]})
+                            </span>
+                          )}
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="space-y-2">

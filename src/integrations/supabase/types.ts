@@ -295,8 +295,8 @@ export type Database = {
           id: string
           nome: string
           nome_responsavel: string | null
-          responsavel_cpf: string | null
-          responsavel_nome: string | null
+          responsavel_cpf: Json | null
+          responsavel_nome: Json | null
           status: Database["public"]["Enums"]["empresa_status"]
           telefone_contato: string | null
           telefones_contato: Json | null
@@ -312,8 +312,8 @@ export type Database = {
           id?: string
           nome: string
           nome_responsavel?: string | null
-          responsavel_cpf?: string | null
-          responsavel_nome?: string | null
+          responsavel_cpf?: Json | null
+          responsavel_nome?: Json | null
           status?: Database["public"]["Enums"]["empresa_status"]
           telefone_contato?: string | null
           telefones_contato?: Json | null
@@ -329,8 +329,8 @@ export type Database = {
           id?: string
           nome?: string
           nome_responsavel?: string | null
-          responsavel_cpf?: string | null
-          responsavel_nome?: string | null
+          responsavel_cpf?: Json | null
+          responsavel_nome?: Json | null
           status?: Database["public"]["Enums"]["empresa_status"]
           telefone_contato?: string | null
           telefones_contato?: Json | null
