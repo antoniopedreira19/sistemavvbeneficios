@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
 
-// URL DA LOGO (Funciona perfeitamente com HTML nativo)
+// URL DA LOGO
 const LOGO_URL =
   "https://gkmobhbmgxwrpuucoykn.supabase.co/storage/v1/object/public/MainBucket/Gemini_Generated_Image_c0slgsc0slgsc0sl-removebg-preview.png";
 
@@ -58,7 +58,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
     return `${day}/${month}/${year}`;
   };
 
-  // --- GERADOR DE HTML (CSS INLINE) ---
   const generateHtml = (empresa: any, colaboradores: any[]) => {
     return `
       <!DOCTYPE html>
@@ -69,31 +68,53 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
           
-          @page { size: A4; margin: 20mm; }
+          @page { size: A4; margin: 15mm 20mm; } /* Margens ajustadas */
           
           body { 
             font-family: 'Inter', sans-serif; 
             color: #333; 
-            line-height: 1.5; 
+            line-height: 1.4; 
             font-size: 13px; 
             -webkit-print-color-adjust: exact; 
             print-color-adjust: exact;
+            background: white;
           }
           
-          /* ESTRUTURA DE PÁGINA */
-          .page-container {
-            position: relative;
-            min-height: 980px; /* Altura aproximada do conteúdo A4 útil */
+          /* ESTRUTURA FLEX PARA A PÁGINA 1 OCUPAR TUDO */
+          .page-one-container {
             display: flex;
             flex-direction: column;
+            min-height: 95vh; /* Ocupa a altura da folha */
           }
 
-          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; border-bottom: 2px solid #203455; padding-bottom: 15px; }
-          .header-title { color: #203455; font-weight: 700; font-size: 16px; text-transform: uppercase; margin-top: 10px; }
-          .logo { width: 100px; height: auto; object-fit: contain; }
+          /* CABEÇALHO PADRÃO */
+          .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; /* ALINHAMENTO VERTICAL CORRIGIDO */
+            border-bottom: 2px solid #203455; 
+            padding-bottom: 15px; 
+            margin-bottom: 30px; 
+          }
+          .header-title { 
+            color: #203455; 
+            font-weight: 700; 
+            font-size: 14px; 
+            text-transform: uppercase; 
+          }
+          .logo { 
+            width: 90px; /* Tamanho controlado */
+            height: auto; 
+            object-fit: contain; 
+          }
           
-          .date { text-align: right; margin-bottom: 30px; font-size: 12px; color: #666; }
+          .date { text-align: right; margin-bottom: 25px; font-size: 12px; color: #666; }
           
+          .content-block { margin-bottom: 20px; }
+          .label { font-weight: 700; color: #000; margin-right: 5px; }
+          
+          .text-justify { text-align: justify; margin-bottom: 15px; }
+
           .section-title { 
             color: #203455; 
             font-weight: 700; 
@@ -105,70 +126,72 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             padding-left: 10px;
           }
 
-          .content-box { margin-bottom: 20px; line-height: 1.6; }
-          .label { font-weight: 700; color: #000; margin-right: 5px; }
-          
-          .text-justify { text-align: justify; margin-bottom: 15px; }
+          /* EMPURRA ASSINATURA PARA BAIXO */
+          .spacer { flex-grow: 1; }
 
-          /* ASSINATURA NO RODAPÉ DA PÁGINA 1 */
+          /* ASSINATURA BLINDADA */
           .signature-wrapper {
-            margin-top: auto; /* Empurra para o fundo do flex container */
-            padding-bottom: 20px;
             width: 100%;
             text-align: center;
+            margin-top: 40px;
+            margin-bottom: 10px;
+            page-break-inside: avoid; /* NÃO QUEBRA NO MEIO */
           }
           .signature-line { 
             border-top: 1px solid #000; 
-            width: 300px; 
+            width: 350px; 
             margin: 0 auto 5px auto; 
           }
           .signature-role { font-weight: 700; font-size: 12px; text-transform: uppercase; }
-          .signature-sub { font-weight: 400; font-size: 11px; margin-top: 2px; }
+          .signature-desc { font-size: 11px; margin-top: 2px; }
 
-          /* TABELA DE VIDAS */
+          /* TABELA */
           .page-break { page-break-before: always; }
+          .list-title { 
+            font-size: 14px; 
+            font-weight: 700; 
+            color: #203455; 
+            margin: 20px 0 10px 0; 
+            text-transform: uppercase;
+          }
           
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            margin-top: 15px; 
             font-size: 11px; 
             border: 1px solid #e2e8f0;
           }
-          
           th { 
-            background-color: #203455 !important; /* Azul Escuro */
+            background-color: #203455 !important; 
             color: white !important; 
-            padding: 10px 8px; 
+            padding: 8px; 
             text-align: left; 
             text-transform: uppercase;
             font-weight: 600;
             border: 1px solid #1e293b;
           }
-          
           td { 
             padding: 8px; 
-            border: 1px solid #e2e8f0; /* Linhas de Grade */
+            border: 1px solid #e2e8f0; 
             color: #333;
           }
-          
-          tr:nth-child(even) { background-color: #f8fafc !important; } /* Zebrado leve */
+          tr:nth-child(even) { background-color: #f8fafc !important; }
           
           .total-row { 
             text-align: right; 
             font-weight: 700; 
-            padding: 15px 0; 
+            padding: 10px 0; 
             font-size: 12px; 
-            color: #203455;
+            color: #203455; 
           }
-
+          
           .text-center { text-align: center; }
           .text-right { text-align: right; }
         </style>
       </head>
       <body>
         
-        <div class="page-container">
+        <div class="page-one-container">
           
           <div class="header">
             <div class="header-title">SEGURO DE ACIDENTES PESSOAIS COLETIVO</div>
@@ -177,7 +200,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
           <div class="date">${getDataAtualExtenso()}</div>
 
-          <div class="content-box">
+          <div class="content-block">
             <div><span class="label">ESTIPULANTE:</span> VV BENEFICIOS E CONSULTORIA LTDA</div>
             <div><span class="label">CNPJ Nº:</span> 56.967.823/0001-45</div>
             <div><span class="label">APÓLICE Nº:</span> ${apolice}</div>
@@ -195,7 +218,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
           </div>
 
           <div class="section-title">DADOS DA EMPRESA</div>
-          <div class="content-box">
+          <div class="content-block">
             <div><span class="label">Nome:</span> ${empresa.nome.toUpperCase()}</div>
             <div><span class="label">CNPJ:</span> ${formatCNPJ(empresa.cnpj)}</div>
             <div><span class="label">Endereço:</span> ${empresa.endereco || "Não informado"}</div>
@@ -203,20 +226,23 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             <div><span class="label">Telefone:</span> (71) 99692-8880</div>
           </div>
 
+          <div class="spacer"></div>
+
           <div class="signature-wrapper">
             <div class="signature-line"></div>
-            <div class="signature-role">ESTIPULANTE</div>
-            <div class="signature-sub">Assinatura do Representante Legal</div>
+            <div class="signature-role">Estipulante</div>
+            <div class="signature-desc">Assinatura do Representante Legal</div>
           </div>
 
-        </div>
-
+        </div> 
         <div class="page-break"></div>
 
         <div class="header">
-          <div class="header-title">RELAÇÃO DE VIDAS</div>
+          <div class="header-title">SEGURO DE ACIDENTES PESSOAIS COLETIVO</div>
           <img src="${LOGO_URL}" class="logo" alt="Logo VV" />
         </div>
+
+        <div class="list-title">RELAÇÃO DE VIDAS</div>
 
         <table>
           <thead>
@@ -264,7 +290,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
     setLoading(true);
     try {
-      // 1. Busca Dados
       const { data: empresa, error: erroEmpresa } = await supabase
         .from("empresas")
         .select("*")
@@ -287,16 +312,13 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         return;
       }
 
-      // 2. Gera HTML
       const htmlContent = generateHtml(empresa, colaboradores);
 
-      // 3. Abre Janela e Imprime
       const printWindow = window.open("", "_blank");
       if (printWindow) {
         printWindow.document.write(htmlContent);
         printWindow.document.close();
 
-        // Aguarda carregar imagens antes de imprimir
         printWindow.addEventListener("load", () => {
           setTimeout(() => {
             printWindow.focus();
