@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { formatCNPJ, formatCPF, formatTelefone } from "@/lib/validators";
 import { Loader2, UploadCloud, Trash2, FileText, Download, ExternalLink, Plus, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch"; // Importando Switch
+import { Switch } from "@/components/ui/switch";
 
 interface EditarEmpresaDialogProps {
   empresa: any;
@@ -45,12 +45,13 @@ export function EditarEmpresaDialog({
   const [emailContato, setEmailContato] = useState("");
   const [telefoneContato, setTelefoneContato] = useState("");
   const [status, setStatus] = useState("");
-  const [implantada, setImplantada] = useState(true); // Novo Estado
+  const [implantada, setImplantada] = useState(true);
 
   // Listas de Contatos
   const [emails, setEmails] = useState<string[]>([]);
   const [telefones, setTelefones] = useState<string[]>([]);
 
+  // Query para garantir dados frescos
   const { data: empresa } = useQuery({
     queryKey: ["empresa-detail-edit", initialEmpresa.id],
     queryFn: async () => {
@@ -62,17 +63,27 @@ export function EditarEmpresaDialog({
     enabled: open,
   });
 
+  // --- CORREÇÃO PRINCIPAL: Leitura Segura de JSONB/Array ---
   useEffect(() => {
     if (empresa) {
       setNome(empresa.nome || "");
       setCnpj(formatCNPJ(empresa.cnpj || ""));
       setEndereco(empresa.endereco || "");
-      setResponsavelNome(empresa.responsavel_nome || "");
-      setResponsavelCpf(formatCPF(empresa.responsavel_cpf || ""));
+
+      // Tratamento para Responsável (pode vir como Array JSONB ou String)
+      const rawNomeResp = Array.isArray(empresa.responsavel_nome)
+        ? empresa.responsavel_nome[0]
+        : empresa.responsavel_nome;
+
+      const rawCpfResp = Array.isArray(empresa.responsavel_cpf) ? empresa.responsavel_cpf[0] : empresa.responsavel_cpf;
+
+      setResponsavelNome(rawNomeResp || "");
+      setResponsavelCpf(formatCPF(rawCpfResp || ""));
+
       setEmailContato(empresa.email_contato || "");
       setTelefoneContato(formatTelefone(empresa.telefone_contato || ""));
       setStatus(empresa.status || "ativa");
-      setImplantada(empresa.implantada !== false); // Padrão true se vier nulo
+      setImplantada(empresa.implantada !== false);
 
       const existingEmails = (empresa.emails_contato as string[]) || [];
       const existingTelefones = (empresa.telefones_contato as string[]) || [];
@@ -81,7 +92,7 @@ export function EditarEmpresaDialog({
     }
   }, [empresa, open]);
 
-  // ... Lógica de Contrato (mantida igual) ...
+  // --- Lógica de Contrato ---
   const handleDownload = async () => {
     if (!empresa.contrato_url) return;
     setDownloading(true);
@@ -159,8 +170,8 @@ export function EditarEmpresaDialog({
       setUploading(false);
     }
   };
-  // ... Fim Lógica Contrato ...
 
+  // --- Lógica de Salvar (Mutation) ---
   const editarEmpresaMutation = useMutation({
     mutationFn: async () => {
       const cnpjLimpo = cnpj.replace(/\D/g, "");
@@ -171,20 +182,26 @@ export function EditarEmpresaDialog({
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
+      // Prepara os dados do responsável como Array (JSONB)
+      // Se tiver valor, manda ['Valor']. Se não, manda nulo ou array vazio.
+      const respNomePayload = responsavelNome ? [responsavelNome] : null;
+      const respCpfPayload = cpfLimpo ? [cpfLimpo] : null;
+
       const { error } = await supabase
         .from("empresas")
         .update({
           nome,
           cnpj: cnpjLimpo,
           endereco: endereco || null,
-          responsavel_nome: responsavelNome || null,
-          responsavel_cpf: cpfLimpo || null,
+          // Enviando como Array para compatibilidade com o Trigger/N8N
+          responsavel_nome: respNomePayload as any,
+          responsavel_cpf: respCpfPayload as any,
           email_contato: emailContato,
           telefone_contato: telefoneContato,
           emails_contato: validEmails,
           telefones_contato: validTelefones,
           status: status as any,
-          implantada: implantada, // Enviando o novo status
+          implantada: implantada,
         })
         .eq("id", empresa.id);
 
@@ -233,7 +250,7 @@ export function EditarEmpresaDialog({
 
         <ScrollArea className="flex-1 px-6">
           <form id="edit-form" onSubmit={handleSubmit} className="space-y-6 pb-6">
-            {/* SEÇÃO 0: STATUS DE IMPLANTAÇÃO (NOVO) */}
+            {/* SEÇÃO 0: STATUS DE IMPLANTAÇÃO */}
             <div className="p-4 bg-blue-50/50 rounded-lg border border-blue-100 flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-semibold text-blue-900">Empresa Implantada?</Label>
@@ -254,7 +271,7 @@ export function EditarEmpresaDialog({
               </div>
             </div>
 
-            {/* SEÇÃO 1: CONTRATO (MANTIDA) */}
+            {/* SEÇÃO 1: CONTRATO */}
             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-2">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold flex items-center gap-2 text-slate-700">
@@ -337,7 +354,7 @@ export function EditarEmpresaDialog({
               </div>
             </div>
 
-            {/* SEÇÃO 2: DADOS CADASTRAIS (MANTIDA) */}
+            {/* SEÇÃO 2: DADOS CADASTRAIS */}
             <div className="space-y-4">
               <h4 className="text-sm font-medium border-b pb-1 text-slate-500">Dados Cadastrais</h4>
               <div className="grid grid-cols-2 gap-4">
@@ -360,7 +377,7 @@ export function EditarEmpresaDialog({
               </div>
             </div>
 
-            {/* SEÇÃO 3: RESPONSÁVEL (MANTIDA) */}
+            {/* SEÇÃO 3: RESPONSÁVEL */}
             <div className="space-y-4">
               <h4 className="text-sm font-medium border-b pb-1 text-slate-500">Dados do Responsável (Assinatura)</h4>
               <div className="grid grid-cols-2 gap-4">
@@ -379,7 +396,7 @@ export function EditarEmpresaDialog({
               </div>
             </div>
 
-            {/* SEÇÃO 4: CONTATO & STATUS (MANTIDA) */}
+            {/* SEÇÃO 4: CONTATO & STATUS */}
             <div className="space-y-4">
               <h4 className="text-sm font-medium border-b pb-1 text-slate-500">Contato & Status</h4>
               <div className="grid grid-cols-2 gap-4">
@@ -410,7 +427,7 @@ export function EditarEmpresaDialog({
                 </div>
               </div>
 
-              {/* Contatos Extras (MANTIDA) */}
+              {/* Contatos Extras */}
               <div className="space-y-3 pt-2">
                 <Label className="text-xs uppercase text-muted-foreground">Contatos Adicionais</Label>
                 {emails.map((email, i) => (
