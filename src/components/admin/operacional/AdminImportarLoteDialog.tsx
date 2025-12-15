@@ -490,6 +490,17 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         loteIdCriado = novoLote.id;
       }
 
+      // Coletar CPFs da nova lista para identificar desligamentos
+      const cpfsNaLista = new Set(validos.map((c) => c.cpf));
+
+      // Buscar colaboradores ativos atuais desta empresa/obra
+      const { data: colaboradoresAtuais } = await supabase
+        .from("colaboradores")
+        .select("id, cpf")
+        .eq("empresa_id", selectedEmpresa)
+        .eq("obra_id", selectedObra)
+        .eq("status", "ativo");
+
       const BATCH_SIZE = 100;
       for (let i = 0; i < validos.length; i += BATCH_SIZE) {
         const batch = validos.slice(i, i + BATCH_SIZE);
@@ -530,6 +541,21 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         const { error: itemsError } = await supabase.from("colaboradores_lote").insert(loteItemsData);
 
         if (itemsError) throw itemsError;
+      }
+
+      // Marcar colaboradores que NÃO estão na lista como "desligado" (em vez de deletar)
+      const idsParaDesligar = (colaboradoresAtuais || [])
+        .filter((c) => !cpfsNaLista.has(c.cpf))
+        .map((c) => c.id);
+
+      if (idsParaDesligar.length > 0) {
+        for (let i = 0; i < idsParaDesligar.length; i += BATCH_SIZE) {
+          const chunkIds = idsParaDesligar.slice(i, i + BATCH_SIZE);
+          await supabase
+            .from("colaboradores")
+            .update({ status: "desligado", updated_at: new Date().toISOString() })
+            .in("id", chunkIds);
+        }
       }
 
       const { error: finalError } = await supabase
