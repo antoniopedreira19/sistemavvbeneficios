@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // CORREÇÃO PARA O PDFMAKE:
+      "pdfmake/build/pdfmake": "pdfmake/build/pdfmake.js",
+      "pdfmake/build/vfs_fonts": "pdfmake/build/vfs_fonts.js",
     },
     dedupe: ["react", "react-dom"],
   },

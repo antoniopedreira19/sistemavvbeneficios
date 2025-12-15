@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
-// Adicione isto no final do arquivo src/vite-env.d.ts
-
+// Adicione isto ao final do arquivo:
 declare module "pdfmake/build/pdfmake" {
   const pdfMake: any;
   export default pdfMake;
