@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,9 +47,14 @@ interface GerarAdendoBtnProps {
 export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBtnProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Controle da Logo
   const [logoBase64, setLogoBase64] = useState<string>("");
   const [logoLoading, setLogoLoading] = useState(true);
   const [logoError, setLogoError] = useState(false);
+
+  // Ref para garantir acesso imediato ao valor mais atual dentro de funções
+  const logoRef = useRef<string>("");
 
   // Estados do Formulário
   const [apolice, setApolice] = useState("");
@@ -60,40 +65,36 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
   useEffect(() => {
     const loadLogo = async () => {
       console.log("🔍 Iniciando carregamento da logo...");
-      console.log("🔗 URL da logo:", logoAdendo);
       setLogoLoading(true);
       setLogoError(false);
 
       try {
         const img = new Image();
         img.crossOrigin = "anonymous";
+        img.src = logoAdendo;
 
         await new Promise<void>((resolve, reject) => {
-          img.onload = () => {
-            console.log("✅ Imagem carregada:", img.naturalWidth, "x", img.naturalHeight);
-            resolve();
-          };
-          img.onerror = (e) => {
-            console.error("❌ Erro no onload da imagem:", e);
-            reject(new Error("Falha ao carregar imagem"));
-          };
-          img.src = logoAdendo;
+          img.onload = () => resolve();
+          img.onerror = (e) => reject(e);
         });
+
+        console.log("✅ Imagem carregada (dimensões):", img.naturalWidth, "x", img.naturalHeight);
 
         const canvas = document.createElement("canvas");
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext("2d");
-        
-        if (!ctx) {
-          throw new Error("Não foi possível criar contexto canvas");
-        }
-        
+
+        if (!ctx) throw new Error("Não foi possível criar contexto canvas");
+
         ctx.drawImage(img, 0, 0);
         const base64 = canvas.toDataURL("image/png");
-        
+
         console.log("✅ Logo convertida para base64, tamanho:", base64.length);
+
+        // Atualiza tanto o State quanto a Ref
         setLogoBase64(base64);
+        logoRef.current = base64;
         setLogoLoading(false);
       } catch (error) {
         console.error("❌ Erro ao carregar logo:", error);
@@ -101,6 +102,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         setLogoLoading(false);
       }
     };
+
     loadLogo();
   }, []);
 
@@ -133,8 +135,18 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
   };
 
   const gerarDocumento = async () => {
+    // 1. Validações Iniciais
     if (!apolice || !dataInicio || !dataFim) {
       toast.error("Por favor, preencha todos os campos.");
+      return;
+    }
+
+    // Validação da Logo
+    const currentLogo = logoRef.current || logoBase64;
+    console.log("📄 Gerando PDF - logoBase64 tem valor?", !!currentLogo, "tamanho:", currentLogo.length);
+
+    if (!currentLogo && !logoError) {
+      toast.warning("A logo ainda está sendo processada. Tente novamente em alguns segundos.");
       return;
     }
 
@@ -168,26 +180,37 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         pageSize: "A4",
         pageMargins: [40, 90, 40, 60], // Margem superior maior (90) para o cabeçalho
 
-        // CABEÇALHO (Repete em todas as páginas)
-        header: {
-          margin: [40, 30, 40, 0],
-          columns: [
-            {
-              text: "SEGURO DE ACIDENTES PESSOAIS COLETIVO",
-              color: COLORS.PRIMARY,
-              bold: true,
-              fontSize: 12,
-              alignment: "left",
-              margin: [0, 10, 0, 0], // Ajuste vertical para alinhar com a logo
-            },
-            logoBase64
-              ? {
-                  image: logoBase64,
-                  width: 60, // Tamanho da logo
-                  alignment: "right",
-                }
-              : { text: "VV BENEFÍCIOS", fontSize: 14, bold: true, alignment: "right" }, // Fallback se a logo falhar
-          ],
+        // CABEÇALHO (Agora como Função para garantir renderização dinâmica)
+        header: function (currentPage: number, pageCount: number) {
+          // Usa a REF para garantir que pegamos o valor mais atual mesmo dentro da função do pdfmake
+          const logoToUse = logoRef.current;
+
+          return {
+            margin: [40, 30, 40, 0],
+            columns: [
+              {
+                text: "SEGURO DE ACIDENTES PESSOAIS COLETIVO",
+                color: COLORS.PRIMARY,
+                bold: true,
+                fontSize: 12,
+                alignment: "left",
+                margin: [0, 10, 0, 0], // Ajuste vertical para alinhar com a logo
+              },
+              logoToUse
+                ? {
+                    image: logoToUse,
+                    width: 60, // Logo menor
+                    alignment: "right",
+                  }
+                : {
+                    text: "VV BENEFÍCIOS",
+                    fontSize: 14,
+                    bold: true,
+                    alignment: "right",
+                    color: COLORS.PRIMARY,
+                  },
+            ],
+          };
         },
 
         content: [
@@ -254,7 +277,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
               { text: "Telefone: ", bold: true },
               "(71) 99692-8880",
             ],
-            margin: [0, 0, 0, 0],
+            margin: [0, 0, 0, 0], // Margem inferior controlada pela posição absoluta da assinatura
             lineHeight: 1.4,
           },
 
@@ -404,23 +427,21 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
           {/* Feedback visual do status da logo */}
           {logoLoading && (
-            <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <p className="text-xs text-muted-foreground flex items-center gap-2 animate-pulse">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Carregando logo...
+              Preparando logo...
             </p>
           )}
-          {logoError && (
-            <p className="text-sm text-yellow-600">⚠️ Logo não carregou - PDF usará texto alternativo</p>
-          )}
+          {logoError && <p className="text-xs text-yellow-600 font-medium">⚠️ Logo indisponível - PDF usará texto</p>}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancelar
           </Button>
-          <Button 
-            onClick={gerarDocumento} 
-            disabled={loading || logoLoading} 
+          <Button
+            onClick={gerarDocumento}
+            disabled={loading || logoLoading}
             className="bg-[#203455] hover:bg-[#2c456b]"
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
