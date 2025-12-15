@@ -18,8 +18,15 @@ import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
 
-// Configuração do pdfmake
-pdfMake.vfs = pdfFonts.pdfMake.vfs;
+// Configuração do pdfmake - usando any para evitar problemas de tipagem
+const fontsModule = pdfFonts as any;
+if (fontsModule?.pdfMake?.vfs) {
+  (pdfMake as any).vfs = fontsModule.pdfMake.vfs;
+} else if (fontsModule?.default?.pdfMake?.vfs) {
+  (pdfMake as any).vfs = fontsModule.default.pdfMake.vfs;
+} else if (fontsModule?.vfs) {
+  (pdfMake as any).vfs = fontsModule.vfs;
+}
 
 interface GerarAdendoBtnProps {
   empresaId: string;
