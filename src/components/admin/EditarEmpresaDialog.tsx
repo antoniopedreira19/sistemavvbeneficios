@@ -40,8 +40,7 @@ export function EditarEmpresaDialog({
   const [nome, setNome] = useState("");
   const [cnpj, setCnpj] = useState("");
   const [endereco, setEndereco] = useState("");
-  const [responsavelNome, setResponsavelNome] = useState("");
-  const [responsavelCpf, setResponsavelCpf] = useState("");
+  const [responsaveis, setResponsaveis] = useState<Array<{ nome: string; cpf: string }>>([]);
   const [emailContato, setEmailContato] = useState("");
   const [telefoneContato, setTelefoneContato] = useState("");
   const [status, setStatus] = useState("");
@@ -70,15 +69,19 @@ export function EditarEmpresaDialog({
       setCnpj(formatCNPJ(empresa.cnpj || ""));
       setEndereco(empresa.endereco || "");
 
-      // Tratamento para Responsável (pode vir como Array JSONB ou String)
-      const rawNomeResp = Array.isArray(empresa.responsavel_nome)
-        ? empresa.responsavel_nome[0]
-        : empresa.responsavel_nome;
-
-      const rawCpfResp = Array.isArray(empresa.responsavel_cpf) ? empresa.responsavel_cpf[0] : empresa.responsavel_cpf;
-
-      setResponsavelNome(rawNomeResp || "");
-      setResponsavelCpf(formatCPF(rawCpfResp || ""));
+      // Tratamento para Responsáveis (JSONB arrays)
+      const nomesArray = Array.isArray(empresa.responsavel_nome) 
+        ? empresa.responsavel_nome 
+        : empresa.responsavel_nome ? [empresa.responsavel_nome] : [];
+      const cpfsArray = Array.isArray(empresa.responsavel_cpf) 
+        ? empresa.responsavel_cpf 
+        : empresa.responsavel_cpf ? [empresa.responsavel_cpf] : [];
+      
+      const responsaveisData = nomesArray.map((nome: string, idx: number) => ({
+        nome: nome || "",
+        cpf: formatCPF(cpfsArray[idx] || "")
+      }));
+      setResponsaveis(responsaveisData.length > 0 ? responsaveisData : [{ nome: "", cpf: "" }]);
 
       setEmailContato(empresa.email_contato || "");
       setTelefoneContato(formatTelefone(empresa.telefone_contato || ""));
@@ -175,17 +178,20 @@ export function EditarEmpresaDialog({
   const editarEmpresaMutation = useMutation({
     mutationFn: async () => {
       const cnpjLimpo = cnpj.replace(/\D/g, "");
-      const cpfLimpo = responsavelCpf.replace(/\D/g, "");
 
       if (cnpjLimpo.length !== 14) throw new Error("CNPJ inválido (14 dígitos)");
 
       const validEmails = emails.filter((e) => e.trim() !== "");
       const validTelefones = telefones.filter((t) => t.trim() !== "");
 
-      // Prepara os dados do responsável como Array (JSONB)
-      // Se tiver valor, manda ['Valor']. Se não, manda nulo ou array vazio.
-      const respNomePayload = responsavelNome ? [responsavelNome] : null;
-      const respCpfPayload = cpfLimpo ? [cpfLimpo] : null;
+      // Prepara os dados dos responsáveis como Arrays (JSONB)
+      const validResponsaveis = responsaveis.filter(r => r.nome.trim() !== "" || r.cpf.trim() !== "");
+      const respNomePayload = validResponsaveis.length > 0 
+        ? validResponsaveis.map(r => r.nome.trim()).filter(n => n !== "")
+        : null;
+      const respCpfPayload = validResponsaveis.length > 0 
+        ? validResponsaveis.map(r => r.cpf.replace(/\D/g, "")).filter(c => c !== "")
+        : null;
 
       const { error } = await supabase
         .from("empresas")
@@ -239,6 +245,21 @@ export function EditarEmpresaDialog({
     setTelefones(n);
   };
   const removeTelefone = (i: number) => setTelefones(telefones.filter((_, idx) => idx !== i));
+
+  // Funções para gerenciar responsáveis
+  const addResponsavel = () => setResponsaveis([...responsaveis, { nome: "", cpf: "" }]);
+  const updateResponsavel = (i: number, field: "nome" | "cpf", val: string) => {
+    const updated = [...responsaveis];
+    updated[i] = { ...updated[i], [field]: field === "cpf" ? formatCPF(val) : val };
+    setResponsaveis(updated);
+  };
+  const removeResponsavel = (i: number) => {
+    if (responsaveis.length === 1) {
+      setResponsaveis([{ nome: "", cpf: "" }]);
+    } else {
+      setResponsaveis(responsaveis.filter((_, idx) => idx !== i));
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -377,23 +398,44 @@ export function EditarEmpresaDialog({
               </div>
             </div>
 
-            {/* SEÇÃO 3: RESPONSÁVEL */}
+            {/* SEÇÃO 3: RESPONSÁVEIS */}
             <div className="space-y-4">
-              <h4 className="text-sm font-medium border-b pb-1 text-slate-500">Dados do Responsável (Assinatura)</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label>Nome Completo</Label>
-                  <Input value={responsavelNome} onChange={(e) => setResponsavelNome(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>CPF</Label>
-                  <Input
-                    value={responsavelCpf}
-                    onChange={(e) => setResponsavelCpf(formatCPF(e.target.value))}
-                    maxLength={14}
-                  />
-                </div>
+              <div className="flex items-center justify-between border-b pb-1">
+                <h4 className="text-sm font-medium text-slate-500">Responsáveis (Assinatura)</h4>
+                <Button type="button" variant="outline" size="sm" onClick={addResponsavel} className="h-7 text-xs">
+                  <Plus className="h-3 w-3 mr-1" /> Adicionar
+                </Button>
               </div>
+              {responsaveis.map((resp, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Nome Completo</Label>
+                    <Input 
+                      value={resp.nome} 
+                      onChange={(e) => updateResponsavel(idx, "nome", e.target.value)} 
+                      placeholder="Nome do responsável"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">CPF</Label>
+                    <Input
+                      value={resp.cpf}
+                      onChange={(e) => updateResponsavel(idx, "cpf", e.target.value)}
+                      maxLength={14}
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 text-red-500 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => removeResponsavel(idx)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
             </div>
 
             {/* SEÇÃO 4: CONTATO & STATUS */}
