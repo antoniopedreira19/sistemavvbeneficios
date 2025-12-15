@@ -38,6 +38,7 @@ import { LotesTable, LoteOperacional } from "@/components/admin/operacional/Lote
 import { ProcessarRetornoDialog } from "@/components/admin/operacional/ProcessarRetornoDialog";
 import { AdminImportarLoteDialog } from "@/components/admin/operacional/AdminImportarLoteDialog";
 import { EditarLoteDialog } from "@/components/admin/operacional/EditarLoteDialog";
+import { CobrancaMassaDialog } from "@/components/admin/operacional/CobrancaMassaDialog";
 import ExcelJS from "exceljs";
 import { formatCNPJ, formatCPF } from "@/lib/validators";
 
@@ -432,6 +433,8 @@ export default function Operacional() {
           <Button onClick={() => setImportarDialogOpen(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" /> Importar
           </Button>
+          
+          <CobrancaMassaDialog />
         </div>
       </div>
 
