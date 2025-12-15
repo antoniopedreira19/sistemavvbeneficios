@@ -25,6 +25,7 @@ import {
   X,
   Save,
   Pencil,
+  Download,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { validateCPF, formatCNPJ } from "@/lib/validators";
@@ -773,9 +774,34 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
                 <p className="text-sm text-muted-foreground">Clique para selecionar o arquivo do seu computador</p>
                 <Input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileUpload} />
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setStep("selecao")}>
-                Voltar
-              </Button>
+              <div className="flex items-center justify-center gap-4">
+                <Button variant="ghost" size="sm" onClick={() => setStep("selecao")}>
+                  Voltar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    const templateData = [
+                      {
+                        "NOME COMPLETO": "EXEMPLO SILVA",
+                        SEXO: "Masculino",
+                        CPF: "12345678901",
+                        "DATA NASCIMENTO": "01/01/1990",
+                        SALARIO: "R$ 2.500,00",
+                      },
+                    ];
+                    const ws = XLSX.utils.json_to_sheet(templateData);
+                    ws["!cols"] = [{ wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+                    XLSX.writeFile(wb, "modelo_importacao.xlsx");
+                  }}
+                >
+                  <Download className="h-4 w-4" /> Baixar Modelo
+                </Button>
+              </div>
             </div>
           )}
 
