@@ -18,16 +18,16 @@ import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
 
-// URL DA LOGO (Garante que sempre esteja disponível)
+// URL DA LOGO
 const LOGO_URL =
   "https://gkmobhbmgxwrpuucoykn.supabase.co/storage/v1/object/public/MainBucket/Gemini_Generated_Image_c0slgsc0slgsc0sl-removebg-preview.png";
 
 // CORES DO SISTEMA
 const COLORS = {
   PRIMARY: "#203455", // Azul VV
-  SECONDARY: "#F5F5F5", // Cinza Claro (Fundo)
-  TEXT_MAIN: "#333333", // Texto Escuro
-  TEXT_LIGHT: "#666666", // Texto Secundário
+  SECONDARY: "#F5F5F5", // Branco Gelo
+  TEXT_MAIN: "#333333",
+  TEXT_LIGHT: "#666666",
 };
 
 // Configuração do pdfmake
@@ -49,12 +49,11 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Estados do Formulário Manual
+  // Estados do Formulário
   const [apolice, setApolice] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  // Helper: Converter Imagem URL para Base64
   const getBase64ImageFromURL = (url: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -68,12 +67,11 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         const dataURL = canvas.toDataURL("image/png");
         resolve(dataURL);
       };
-      img.onerror = () => resolve(""); // Retorna vazio se falhar, para não quebrar o PDF
+      img.onerror = () => resolve("");
       img.src = url;
     });
   };
 
-  // Helper: Data por extenso
   const getDataAtualExtenso = () => {
     const data = new Date();
     const dia = data.getDate();
@@ -96,7 +94,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
     return `Salvador, ${dia} de ${mes} de ${ano}`;
   };
 
-  // Helper: Formatar data curta
   const formatDataPTBR = (dateString: string) => {
     if (!dateString) return "--/--/----";
     const [year, month, day] = dateString.split("-");
@@ -111,10 +108,8 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
     setLoading(true);
     try {
-      // 1. Carregar Logo
       const logoBase64 = await getBase64ImageFromURL(LOGO_URL);
 
-      // 2. Buscar Dados do Banco
       const { data: empresa, error: erroEmpresa } = await supabase
         .from("empresas")
         .select("*")
@@ -138,28 +133,27 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         return;
       }
 
-      // 3. Definição do PDF
+      // --- DEFINIÇÃO DO PDF ---
       const docDefinition: any = {
         pageSize: "A4",
-        // Margens aumentadas no topo (80) para caber o cabeçalho
-        pageMargins: [40, 80, 40, 60],
+        pageMargins: [40, 90, 40, 60], // Margem superior maior (90) para o cabeçalho
 
         // CABEÇALHO (Repete em todas as páginas)
         header: {
-          margin: [40, 20, 40, 0],
+          margin: [40, 30, 40, 0],
           columns: [
             {
               text: "SEGURO DE ACIDENTES PESSOAIS COLETIVO",
               color: COLORS.PRIMARY,
               bold: true,
-              fontSize: 11,
+              fontSize: 12,
               alignment: "left",
-              margin: [0, 15, 0, 0], // Alinhamento vertical com a logo
+              margin: [0, 10, 0, 0], // Ajuste vertical para alinhar com a logo
             },
             logoBase64
               ? {
                   image: logoBase64,
-                  width: 90,
+                  width: 60, // Logo menor
                   alignment: "right",
                 }
               : null,
@@ -167,37 +161,29 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         },
 
         content: [
-          // DATA (Topo da página 1)
+          // DATA (Topo Pág 1)
           {
             text: getDataAtualExtenso(),
             alignment: "right",
             fontSize: 10,
-            margin: [0, 0, 0, 20],
+            margin: [0, 0, 0, 30],
           },
 
-          // BLOCO ESTIPULANTE (Limpo, sem fundo)
+          // BLOCO ESTIPULANTE (Visual Clean)
           {
-            style: "boxWrapper",
-            table: {
-              widths: ["*"],
-              body: [
-                [
-                  {
-                    stack: [
-                      { text: [{ text: "ESTIPULANTE: ", bold: true }, "VV BENEFICIOS E CONSULTORIA LTDA"] },
-                      { text: [{ text: "CNPJ Nº: ", bold: true }, "56.967.823/0001-45"] },
-                      { text: [{ text: "APÓLICE Nº: ", bold: true }, apolice] },
-                      { text: [{ text: "CORRETOR: ", bold: true }, "GERSON BARTH PORTNOI"] },
-                    ],
-                    margin: [0, 5, 0, 5],
-                    fontSize: 10,
-                    color: COLORS.TEXT_MAIN,
-                  },
-                ],
-              ],
-            },
-            layout: "noBorders", // Remove bordas para visual clean
-            margin: [0, 0, 0, 20],
+            style: "boxClean",
+            text: [
+              { text: "ESTIPULANTE: ", bold: true },
+              "VV BENEFICIOS E CONSULTORIA LTDA\n",
+              { text: "CNPJ Nº: ", bold: true },
+              "56.967.823/0001-45\n",
+              { text: "APÓLICE Nº: ", bold: true },
+              `${apolice}\n`,
+              { text: "CORRETOR: ", bold: true },
+              "GERSON BARTH PORTNOI",
+            ],
+            margin: [0, 0, 0, 25],
+            lineHeight: 1.4,
           },
 
           // TEXTO JURÍDICO
@@ -205,79 +191,68 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             text: [
               "Pelo presente documento, que passa a integrar a apólice nº ",
               { text: apolice, bold: true },
-              " fica acordada entre as partes contratantes deste seguro que: A empresa mencionada está ativa e regular nesta apólice.",
-            ],
-            fontSize: 10,
-            alignment: "justify",
-            margin: [0, 0, 0, 10],
-            lineHeight: 1.3,
-          },
-
-          {
-            text: [
+              " fica acordada entre as partes contratantes deste seguro que: A empresa mencionada está ativa e regular nesta apólice.\n\n",
               { text: "Vigência: ", bold: true },
               `${formatDataPTBR(dataInicio)} a ${formatDataPTBR(dataFim)}`,
               " inclui-se o seguinte subestipulante:",
             ],
             fontSize: 10,
-            margin: [0, 0, 0, 20],
+            alignment: "justify",
+            margin: [0, 0, 0, 25],
+            lineHeight: 1.4,
           },
 
-          // DADOS DA EMPRESA (SUBESTIPULANTE)
+          // DADOS DA EMPRESA (Clean)
           {
             text: "DADOS DA EMPRESA",
             bold: true,
             fontSize: 11,
             color: COLORS.PRIMARY,
-            margin: [0, 0, 0, 2],
+            margin: [0, 0, 0, 8],
           },
           {
-            table: {
-              widths: ["*"],
-              body: [
-                [
-                  {
-                    stack: [
-                      { text: [{ text: "Nome: ", bold: true }, empresa.nome.toUpperCase()] },
-                      { text: [{ text: "CNPJ: ", bold: true }, formatCNPJ(empresa.cnpj)] },
-                      { text: [{ text: "Endereço: ", bold: true }, empresa.endereco || "Não informado"] },
-                      { text: " " },
-                      { text: [{ text: "Email: ", bold: true }, "contato@vvbeneficios.com.br"] },
-                      { text: [{ text: "Telefone: ", bold: true }, "(71) 99692-8880"] },
-                    ],
-                    fillColor: COLORS.SECONDARY, // Fundo cinza suave (#F5F5F5)
-                    margin: [10, 10, 10, 10],
-                    fontSize: 10,
-                  },
-                ],
-              ],
-            },
-            layout: "noBorders",
-            margin: [0, 0, 0, 40],
+            style: "boxClean",
+            text: [
+              { text: "Nome: ", bold: true },
+              `${empresa.nome.toUpperCase()}\n`,
+              { text: "CNPJ: ", bold: true },
+              `${formatCNPJ(empresa.cnpj)}\n`,
+              { text: "Endereço: ", bold: true },
+              `${empresa.endereco || "Não informado"}\n`,
+              { text: "Email: ", bold: true },
+              "contato@vvbeneficios.com.br\n",
+              { text: "Telefone: ", bold: true },
+              "(71) 99692-8880",
+            ],
+            margin: [0, 0, 0, 0], // Margem inferior controlada pela posição absoluta da assinatura
+            lineHeight: 1.4,
           },
 
-          // ASSINATURA (Rodapé da página 1)
+          // ASSINATURA (Posição Absoluta no Rodapé da Página 1)
           {
+            absolutePosition: { x: 40, y: 700 }, // Fixa no final da página A4
             stack: [
               { text: "___________________________________________________", alignment: "center" },
               { text: "ESTIPULANTE", alignment: "center", bold: true, fontSize: 10, margin: [0, 5, 0, 0] },
             ],
-            margin: [0, 20, 0, 20],
           },
-
-          // QUEBRA DE PÁGINA OBRIGATÓRIA
-          { text: "", pageBreak: "after" },
 
           // --- PÁGINA 2: RELAÇÃO DE VIDAS ---
 
-          { text: "RELAÇÃO DE VIDAS", style: "header", fontSize: 14, color: COLORS.PRIMARY, margin: [0, 0, 0, 10] },
+          {
+            text: "RELAÇÃO DE VIDAS",
+            style: "header",
+            fontSize: 14,
+            color: COLORS.PRIMARY,
+            pageBreak: "before", // Força pular para página 2
+            margin: [0, 0, 0, 15],
+          },
+
           {
             table: {
               headerRows: 1,
-              // Ajuste fino das larguras para caber tudo
               widths: ["*", 40, 70, 85, 70, "auto"],
               body: [
-                // Cabeçalho da Tabela
                 [
                   { text: "NOME", style: "tableHeader" },
                   { text: "SEXO", style: "tableHeader" },
@@ -286,7 +261,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
                   { text: "SALÁRIO", style: "tableHeader" },
                   { text: "CLASSIFICAÇÃO", style: "tableHeader" },
                 ],
-                // Linhas de Dados
                 ...colaboradores.map((colab, index) => {
                   const rowStyle = index % 2 === 0 ? "tableRow" : "tableRowOdd";
                   return [
@@ -295,7 +269,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
                     { text: formatDataPTBR(colab.data_nascimento), alignment: "center", style: rowStyle },
                     { text: formatCPF(colab.cpf), alignment: "center", style: rowStyle },
                     { text: formatCurrency(colab.salario), alignment: "right", style: rowStyle },
-                    // Usando classificacao_salario conforme solicitado
                     { text: colab.classificacao_salario || colab.cargo || "-", style: rowStyle },
                   ];
                 }),
@@ -311,7 +284,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             },
           },
 
-          // Rodapé da Tabela (Totalizador)
+          // Rodapé Tabela
           {
             text: `Total de Vidas: ${colaboradores.length}`,
             bold: true,
@@ -322,6 +295,10 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         ],
 
         styles: {
+          boxClean: {
+            fontSize: 10,
+            color: COLORS.TEXT_MAIN,
+          },
           tableHeader: {
             bold: true,
             fontSize: 8,
@@ -344,7 +321,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         defaultStyle: {
           font: "Roboto",
           fontSize: 10,
-          lineHeight: 1.2,
         },
       };
 
