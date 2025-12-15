@@ -446,16 +446,29 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
       if (loteExistente) {
         loteIdCriado = loteExistente.id;
+        
+        // Deleta colaboradores_lote antigos primeiro
+        await supabase.from("colaboradores_lote").delete().eq("lote_id", loteIdCriado);
+        
+        // Reseta completamente o lote para o estado inicial (substituição completa)
         await supabase
           .from("lotes_mensais")
           .update({
             status: "aguardando_processamento",
+            total_colaboradores: validos.length,
+            total_aprovados: 0,
+            total_reprovados: 0,
+            total_novos: 0,
+            total_alterados: 0,
+            total_desligados: 0,
             valor_total: valorTotal,
+            arquivo_url: null,
+            motivo_reprovacao: null,
+            observacoes: null,
+            enviado_seguradora_em: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq("id", loteIdCriado);
-
-        await supabase.from("colaboradores_lote").delete().eq("lote_id", loteIdCriado);
       } else {
         const { data: novoLote, error: createError } = await supabase
           .from("lotes_mensais")
