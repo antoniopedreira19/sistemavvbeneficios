@@ -204,8 +204,11 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         },
       };
 
-      pdfMake.createPdf(docDefinition).open();
-      toast.success("Documento gerado!");
+      // Sanitiza o nome da empresa para usar como nome do arquivo
+      const nomeArquivo = `ADENDO_${empresa.nome.replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').replace(/\s+/g, '_').toUpperCase()}.pdf`;
+      
+      pdfMake.createPdf(docDefinition).download(nomeArquivo);
+      toast.success("Documento baixado!");
       setOpen(false); // Fecha o modal após gerar
 
     } catch (error: any) {
