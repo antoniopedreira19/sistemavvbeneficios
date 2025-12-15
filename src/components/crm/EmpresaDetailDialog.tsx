@@ -229,11 +229,29 @@ const EmpresaDetailDialog = ({
                   <User className="h-3 w-3" />
                   Responsável
                 </Label>
-                <p className="text-foreground">
-                  {empresa.nome_responsavel || (
-                    <span className="text-muted-foreground italic">Não informado</span>
-                  )}
-                </p>
+                {(() => {
+                  const nomes = empresa.nome_responsavel;
+                  const cpfs = empresa.responsavel_cpf;
+                  const nomesArray = Array.isArray(nomes) ? nomes : (nomes ? [nomes] : []);
+                  const cpfsArray = Array.isArray(cpfs) ? cpfs : [];
+                  
+                  return nomesArray.length > 0 ? (
+                    <div className="space-y-1">
+                      {nomesArray.map((nome: string, idx: number) => (
+                        <p key={idx} className="text-foreground">
+                          {nome}
+                          {cpfsArray[idx] && (
+                            <span className="text-muted-foreground text-sm ml-2">
+                              (CPF: {cpfsArray[idx]})
+                            </span>
+                          )}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground italic">Não informado</p>
+                  );
+                })()}
               </div>
 
               <div className="space-y-2">

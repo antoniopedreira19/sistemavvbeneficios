@@ -159,11 +159,11 @@ export function CRMInactiveList() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {empresa.nome_responsavel ? (
-                        toTitleCase(empresa.nome_responsavel)
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                      {(() => {
+                        const nome = empresa.nome_responsavel;
+                        const first = Array.isArray(nome) ? nome[0] : nome;
+                        return first ? toTitleCase(first) : <span className="text-muted-foreground">-</span>;
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1 text-sm max-w-[200px]">
