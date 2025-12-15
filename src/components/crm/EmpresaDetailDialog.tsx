@@ -1,28 +1,30 @@
 import { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Building2, Mail, Phone, FileText, User, Pencil, Calendar, ExternalLink, Download, Trash2, Loader2 } from "lucide-react";
+  Building2,
+  Mail,
+  Phone,
+  FileText,
+  User,
+  Pencil,
+  Calendar,
+  ExternalLink,
+  Download,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
+// ADICIONADO: Import do Botão de Gerar Adendo
+import { GerarAdendoBtn } from "@/components/shared/GerarAdendoBtn";
 
 interface EmpresaDetailDialogProps {
   empresa: EmpresaCRM | null;
@@ -68,7 +70,6 @@ const EmpresaDetailDialog = ({
     if (!empresa?.contrato_url) return;
     setDownloading(true);
     try {
-      // Verifica se é URL do Supabase Storage
       if (empresa.contrato_url.includes("supabase.co/storage")) {
         const path = empresa.contrato_url.split("/contratos/").pop();
         if (!path) throw new Error("Caminho inválido");
@@ -85,7 +86,6 @@ const EmpresaDetailDialog = ({
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        // URL do Google Drive ou outra - abre diretamente
         window.open(empresa.contrato_url, "_blank");
       }
     } catch (error) {
@@ -104,7 +104,7 @@ const EmpresaDetailDialog = ({
 
   const fetchCompetencias = async () => {
     if (!empresa) return;
-    
+
     setLoadingCompetencias(true);
     try {
       const { data, error } = await supabase
@@ -135,11 +135,11 @@ const EmpresaDetailDialog = ({
 
   const handleDeleteEmpresa = async () => {
     if (!empresa) return;
-    if (!confirm(`Tem certeza que deseja excluir a empresa "${empresa.nome}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Tem certeza que deseja excluir a empresa "${empresa.nome}"? Esta ação não pode ser desfeita.`))
+      return;
 
     setDeleting(true);
     try {
-      // Remove contrato do Storage se existir
       if (empresa.contrato_url?.includes("supabase.co/storage")) {
         const path = empresa.contrato_url.split("/contratos/").pop();
         if (path) {
@@ -177,9 +177,6 @@ const EmpresaDetailDialog = ({
     contrato_url: empresa.contrato_url,
   };
 
-  // Determinar se está no funil CRM ou é status final
-  const isInFunnel = CRM_FUNNEL_STATUSES.includes(empresa.status as any);
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,11 +188,10 @@ const EmpresaDetailDialog = ({
                 Detalhes da Empresa
               </span>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditDialogOpen(true)}
-                >
+                {/* ADICIONADO: Botão Gerar Adendo */}
+                <GerarAdendoBtn empresaId={empresa.id} variant="outline" />
+
+                <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(true)}>
                   <Pencil className="h-4 w-4 mr-1" />
                   Editar
                 </Button>
@@ -210,17 +206,13 @@ const EmpresaDetailDialog = ({
                 </Button>
               </div>
             </DialogTitle>
-            <DialogDescription>
-              Visualize e gerencie informações da empresa
-            </DialogDescription>
+            <DialogDescription>Visualize e gerencie informações da empresa</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground text-xs uppercase tracking-wide">
-                  Nome
-                </Label>
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide">Nome</Label>
                 <p className="text-lg font-semibold text-foreground">{empresa.nome}</p>
               </div>
 
@@ -232,18 +224,16 @@ const EmpresaDetailDialog = ({
                 {(() => {
                   const nomes = empresa.nome_responsavel;
                   const cpfs = empresa.responsavel_cpf;
-                  const nomesArray = Array.isArray(nomes) ? nomes : (nomes ? [nomes] : []);
+                  const nomesArray = Array.isArray(nomes) ? nomes : nomes ? [nomes] : [];
                   const cpfsArray = Array.isArray(cpfs) ? cpfs : [];
-                  
+
                   return nomesArray.length > 0 ? (
                     <div className="space-y-1">
                       {nomesArray.map((nome: string, idx: number) => (
                         <p key={idx} className="text-foreground">
                           {nome}
                           {cpfsArray[idx] && (
-                            <span className="text-muted-foreground text-sm ml-2">
-                              (CPF: {cpfsArray[idx]})
-                            </span>
+                            <span className="text-muted-foreground text-sm ml-2">(CPF: {cpfsArray[idx]})</span>
                           )}
                         </p>
                       ))}
@@ -269,15 +259,15 @@ const EmpresaDetailDialog = ({
                 </Label>
                 {(() => {
                   const emailsArray = empresa.emails_contato || [];
-                  const allEmails = empresa.email_contato 
-                    ? [empresa.email_contato, ...emailsArray] 
-                    : emailsArray;
-                  const uniqueEmails = Array.from(new Set(allEmails.filter(e => e && e.trim() !== "")));
-                  
+                  const allEmails = empresa.email_contato ? [empresa.email_contato, ...emailsArray] : emailsArray;
+                  const uniqueEmails = Array.from(new Set(allEmails.filter((e) => e && e.trim() !== "")));
+
                   return uniqueEmails.length > 0 ? (
                     <div className="space-y-1">
                       {uniqueEmails.map((email: string, idx: number) => (
-                        <p key={idx} className="text-sm text-foreground">{email}</p>
+                        <p key={idx} className="text-sm text-foreground">
+                          {email}
+                        </p>
                       ))}
                     </div>
                   ) : (
@@ -293,15 +283,17 @@ const EmpresaDetailDialog = ({
                 </Label>
                 {(() => {
                   const telefonesArray = empresa.telefones_contato || [];
-                  const allTelefones = empresa.telefone_contato 
-                    ? [empresa.telefone_contato, ...telefonesArray] 
+                  const allTelefones = empresa.telefone_contato
+                    ? [empresa.telefone_contato, ...telefonesArray]
                     : telefonesArray;
-                  const uniqueTelefones = Array.from(new Set(allTelefones.filter(t => t && t.trim() !== "")));
-                  
+                  const uniqueTelefones = Array.from(new Set(allTelefones.filter((t) => t && t.trim() !== "")));
+
                   return uniqueTelefones.length > 0 ? (
                     <div className="space-y-1">
                       {uniqueTelefones.map((telefone: string, idx: number) => (
-                        <p key={idx} className="text-sm text-foreground">{telefone}</p>
+                        <p key={idx} className="text-sm text-foreground">
+                          {telefone}
+                        </p>
                       ))}
                     </div>
                   ) : (
@@ -316,10 +308,12 @@ const EmpresaDetailDialog = ({
                   <FileText className="h-3 w-3" />
                   Contrato
                 </Label>
-{empresa.contrato_url ? (
+                {empresa.contrato_url ? (
                   <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800">
                     <FileText className="h-4 w-4 text-green-600 shrink-0 dark:text-green-400" />
-                    <span className="text-sm text-green-700 font-medium flex-1 dark:text-green-300">Contrato Anexado</span>
+                    <span className="text-sm text-green-700 font-medium flex-1 dark:text-green-300">
+                      Contrato Anexado
+                    </span>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
@@ -348,9 +342,7 @@ const EmpresaDetailDialog = ({
 
             <div className="border-t pt-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground text-xs uppercase tracking-wide">
-                  Status no CRM
-                </Label>
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide">Status no CRM</Label>
                 <Select value={empresa.status} onValueChange={handleStatusChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o status">
@@ -388,26 +380,19 @@ const EmpresaDetailDialog = ({
                   <Calendar className="h-3 w-3" />
                   Competências Enviadas
                 </Label>
-                
+
                 {loadingCompetencias ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
                   </div>
                 ) : competencias.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">
-                    Nenhuma competência enviada
-                  </p>
+                  <p className="text-sm text-muted-foreground italic">Nenhuma competência enviada</p>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {competencias.map((lote) => (
-                      <div
-                        key={lote.competencia}
-                        className="flex items-center gap-3 p-2 rounded-md bg-muted/50"
-                      >
+                      <div key={lote.competencia} className="flex items-center gap-3 p-2 rounded-md bg-muted/50">
                         <Checkbox checked disabled className="data-[state=checked]:bg-primary" />
-                        <span className="text-sm font-medium text-foreground">
-                          {lote.competencia}
-                        </span>
+                        <span className="text-sm font-medium text-foreground">{lote.competencia}</span>
                         <Badge variant="outline" className="ml-auto text-xs">
                           {LOTE_STATUS_LABELS[lote.status] || lote.status}
                         </Badge>
