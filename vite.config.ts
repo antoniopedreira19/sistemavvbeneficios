@@ -13,9 +13,6 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      // CORREÇÃO DEFINITIVA: Apontando para o caminho absoluto no node_modules
-      "pdfmake/build/pdfmake": path.resolve(__dirname, "node_modules/pdfmake/build/pdfmake.js"),
-      "pdfmake/build/vfs_fonts": path.resolve(__dirname, "node_modules/pdfmake/build/vfs_fonts.js"),
     },
     dedupe: ["react", "react-dom"],
   },
