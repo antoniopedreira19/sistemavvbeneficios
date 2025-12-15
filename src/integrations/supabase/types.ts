@@ -770,6 +770,15 @@ export type Database = {
             }
             Returns: string
           }
+      get_empresas_pendentes: {
+        Args: { p_competencia: string }
+        Returns: {
+          email: string
+          id: string
+          nome: string
+          responsavel: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
