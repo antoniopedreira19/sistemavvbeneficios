@@ -24,20 +24,27 @@ export function CobrancaMassaDialog() {
   // Lista de competências para facilitar (pode ser dinâmica no futuro)
   const competencias = ["Novembro/2024", "Dezembro/2024", "Janeiro/2025", "Fevereiro/2025", "Março/2025"];
 
+  interface EmpresaPendente {
+    id: string;
+    nome: string;
+    email: string;
+    responsavel: string;
+  }
+
   // 1. Busca prévia: Quem está pendente?
   const {
-    data: pendentes = [],
+    data: pendentes = [] as EmpresaPendente[],
     isLoading,
     refetch,
   } = useQuery({
     queryKey: ["empresas-pendentes", competencia],
     enabled: open, // Só busca quando abre o modal
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_empresas_pendentes", {
+      const { data, error } = await (supabase.rpc as any)("get_empresas_pendentes", {
         p_competencia: competencia,
       });
       if (error) throw error;
-      return data;
+      return (data || []) as EmpresaPendente[];
     },
   });
 
