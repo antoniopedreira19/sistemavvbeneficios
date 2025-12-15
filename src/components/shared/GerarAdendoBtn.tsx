@@ -203,6 +203,8 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
           <div class="content-block">
             <div><span class="label">ESTIPULANTE:</span> VV BENEFICIOS E CONSULTORIA LTDA</div>
             <div><span class="label">CNPJ Nº:</span> 56.967.823/0001-45</div>
+            <div><span class="label">Email:</span> contato@vvbeneficios.com.br</div>
+            <div><span class="label">Telefone:</span> (71) 99692-8880</div>
             <div><span class="label">APÓLICE Nº:</span> ${apolice}</div>
             <div><span class="label">CORRETOR:</span> GERSON BARTH PORTNOI</div>
           </div>
@@ -222,8 +224,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             <div><span class="label">Nome:</span> ${empresa.nome.toUpperCase()}</div>
             <div><span class="label">CNPJ:</span> ${formatCNPJ(empresa.cnpj)}</div>
             <div><span class="label">Endereço:</span> ${empresa.endereco || "Não informado"}</div>
-            <div><span class="label">Email:</span> contato@vvbeneficios.com.br</div>
-            <div><span class="label">Telefone:</span> (71) 99692-8880</div>
           </div>
 
           <div class="spacer"></div>
