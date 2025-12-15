@@ -48,27 +48,57 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [logoBase64, setLogoBase64] = useState<string>("");
+  const [logoLoading, setLogoLoading] = useState(true);
+  const [logoError, setLogoError] = useState(false);
 
   // Estados do Formulário
   const [apolice, setApolice] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  // --- SOLUÇÃO ROBUSTA: Carrega a imagem via fetch e converte para Base64 ---
+  // --- SOLUÇÃO ROBUSTA: Carrega a imagem via Canvas para conversão confiável ---
   useEffect(() => {
     const loadLogo = async () => {
+      console.log("🔍 Iniciando carregamento da logo...");
+      console.log("🔗 URL da logo:", logoAdendo);
+      setLogoLoading(true);
+      setLogoError(false);
+
       try {
-        const response = await fetch(logoAdendo);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === "string") {
-            setLogoBase64(reader.result);
-          }
-        };
-        reader.readAsDataURL(blob);
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            console.log("✅ Imagem carregada:", img.naturalWidth, "x", img.naturalHeight);
+            resolve();
+          };
+          img.onerror = (e) => {
+            console.error("❌ Erro no onload da imagem:", e);
+            reject(new Error("Falha ao carregar imagem"));
+          };
+          img.src = logoAdendo;
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        
+        if (!ctx) {
+          throw new Error("Não foi possível criar contexto canvas");
+        }
+        
+        ctx.drawImage(img, 0, 0);
+        const base64 = canvas.toDataURL("image/png");
+        
+        console.log("✅ Logo convertida para base64, tamanho:", base64.length);
+        setLogoBase64(base64);
+        setLogoLoading(false);
       } catch (error) {
-        console.error("Erro ao carregar logo:", error);
+        console.error("❌ Erro ao carregar logo:", error);
+        setLogoError(true);
+        setLogoLoading(false);
       }
     };
     loadLogo();
@@ -371,13 +401,28 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
               <Input id="fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
           </div>
+
+          {/* Feedback visual do status da logo */}
+          {logoLoading && (
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Carregando logo...
+            </p>
+          )}
+          {logoError && (
+            <p className="text-sm text-yellow-600">⚠️ Logo não carregou - PDF usará texto alternativo</p>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancelar
           </Button>
-          <Button onClick={gerarDocumento} disabled={loading} className="bg-[#203455] hover:bg-[#2c456b]">
+          <Button 
+            onClick={gerarDocumento} 
+            disabled={loading || logoLoading} 
+            className="bg-[#203455] hover:bg-[#2c456b]"
+          >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
             Gerar PDF
           </Button>
