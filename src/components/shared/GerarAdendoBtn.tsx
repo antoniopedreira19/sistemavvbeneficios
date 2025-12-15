@@ -18,15 +18,16 @@ import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
 
-// URL DA LOGO (Fornecida)
+// URL DA LOGO (Garante que sempre esteja disponível)
 const LOGO_URL =
   "https://gkmobhbmgxwrpuucoykn.supabase.co/storage/v1/object/public/MainBucket/Gemini_Generated_Image_c0slgsc0slgsc0sl-removebg-preview.png";
 
 // CORES DO SISTEMA
 const COLORS = {
   PRIMARY: "#203455", // Azul VV
-  SECONDARY: "#F5F5F5", // Branco levemente acinzentado
-  TEXT_MAIN: "#333333",
+  SECONDARY: "#F5F5F5", // Cinza Claro (Fundo)
+  TEXT_MAIN: "#333333", // Texto Escuro
+  TEXT_LIGHT: "#666666", // Texto Secundário
 };
 
 // Configuração do pdfmake
@@ -60,7 +61,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
       img.setAttribute("crossOrigin", "anonymous");
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        // Ajusta tamanho se necessário, ou mantém original
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext("2d");
@@ -68,11 +68,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
         const dataURL = canvas.toDataURL("image/png");
         resolve(dataURL);
       };
-      img.onerror = (error) => {
-        console.error("Erro ao carregar imagem:", error);
-        // Retorna uma string vazia ou placeholder em caso de erro para não quebrar o PDF
-        resolve("");
-      };
+      img.onerror = () => resolve(""); // Retorna vazio se falhar, para não quebrar o PDF
       img.src = url;
     });
   };
@@ -118,7 +114,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
       // 1. Carregar Logo
       const logoBase64 = await getBase64ImageFromURL(LOGO_URL);
 
-      // 2. Buscar Dados
+      // 2. Buscar Dados do Banco
       const { data: empresa, error: erroEmpresa } = await supabase
         .from("empresas")
         .select("*")
@@ -145,20 +141,33 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
       // 3. Definição do PDF
       const docDefinition: any = {
         pageSize: "A4",
-        pageMargins: [40, 40, 40, 60],
+        // Margens aumentadas no topo (80) para caber o cabeçalho
+        pageMargins: [40, 80, 40, 60],
+
+        // CABEÇALHO (Repete em todas as páginas)
+        header: {
+          margin: [40, 20, 40, 0],
+          columns: [
+            {
+              text: "SEGURO DE ACIDENTES PESSOAIS COLETIVO",
+              color: COLORS.PRIMARY,
+              bold: true,
+              fontSize: 11,
+              alignment: "left",
+              margin: [0, 15, 0, 0], // Alinhamento vertical com a logo
+            },
+            logoBase64
+              ? {
+                  image: logoBase64,
+                  width: 90,
+                  alignment: "right",
+                }
+              : null,
+          ],
+        },
 
         content: [
-          // LOGO
-          logoBase64
-            ? {
-                image: logoBase64,
-                width: 150, // Ajuste o tamanho da logo conforme necessário
-                alignment: "left",
-                margin: [0, 0, 0, 10],
-              }
-            : null,
-
-          // DATA
+          // DATA (Topo da página 1)
           {
             text: getDataAtualExtenso(),
             alignment: "right",
@@ -166,8 +175,9 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             margin: [0, 0, 0, 20],
           },
 
-          // BOX VV (AZUL)
+          // BLOCO ESTIPULANTE (Limpo, sem fundo)
           {
+            style: "boxWrapper",
             table: {
               widths: ["*"],
               body: [
@@ -179,24 +189,23 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
                       { text: [{ text: "APÓLICE Nº: ", bold: true }, apolice] },
                       { text: [{ text: "CORRETOR: ", bold: true }, "GERSON BARTH PORTNOI"] },
                     ],
-                    fillColor: COLORS.PRIMARY,
-                    color: "white",
+                    margin: [0, 5, 0, 5],
                     fontSize: 10,
-                    margin: [10, 10, 10, 10],
+                    color: COLORS.TEXT_MAIN,
                   },
                 ],
               ],
             },
-            layout: "noBorders",
+            layout: "noBorders", // Remove bordas para visual clean
             margin: [0, 0, 0, 20],
           },
 
           // TEXTO JURÍDICO
           {
             text: [
-              "Pelo presente documento, que passa a integrar a apólice n° ",
+              "Pelo presente documento, que passa a integrar a apólice nº ",
               { text: apolice, bold: true },
-              " fica acordada entre as partes contratantes deste segura que: A empresa mencionada está ativa e regular nesta apólice.",
+              " fica acordada entre as partes contratantes deste seguro que: A empresa mencionada está ativa e regular nesta apólice.",
             ],
             fontSize: 10,
             alignment: "justify",
@@ -211,12 +220,12 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
               " inclui-se o seguinte subestipulante:",
             ],
             fontSize: 10,
-            margin: [0, 0, 0, 15],
+            margin: [0, 0, 0, 20],
           },
 
-          // DADOS DA EMPRESA (BRANCO GELO/CINZA CLARO)
+          // DADOS DA EMPRESA (SUBESTIPULANTE)
           {
-            text: "Dados da Empresa:",
+            text: "DADOS DA EMPRESA",
             bold: true,
             fontSize: 11,
             color: COLORS.PRIMARY,
@@ -236,44 +245,48 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
                       { text: [{ text: "Email: ", bold: true }, "contato@vvbeneficios.com.br"] },
                       { text: [{ text: "Telefone: ", bold: true }, "(71) 99692-8880"] },
                     ],
-                    fillColor: COLORS.SECONDARY, // #F5F5F5
-                    color: COLORS.TEXT_MAIN,
-                    fontSize: 10,
+                    fillColor: COLORS.SECONDARY, // Fundo cinza suave (#F5F5F5)
                     margin: [10, 10, 10, 10],
+                    fontSize: 10,
                   },
                 ],
               ],
             },
             layout: "noBorders",
-            margin: [0, 0, 0, 30],
+            margin: [0, 0, 0, 40],
           },
 
-          // ASSINATURA
+          // ASSINATURA (Rodapé da página 1)
           {
             stack: [
               { text: "___________________________________________________", alignment: "center" },
               { text: "ESTIPULANTE", alignment: "center", bold: true, fontSize: 10, margin: [0, 5, 0, 0] },
             ],
-            margin: [0, 0, 0, 40],
+            margin: [0, 20, 0, 20],
           },
 
-          // TABELA DE VIDAS
-          { text: "RELAÇÃO DE VIDAS", style: "header", fontSize: 12, color: COLORS.PRIMARY, margin: [0, 0, 0, 5] },
+          // QUEBRA DE PÁGINA OBRIGATÓRIA
+          { text: "", pageBreak: "after" },
+
+          // --- PÁGINA 2: RELAÇÃO DE VIDAS ---
+
+          { text: "RELAÇÃO DE VIDAS", style: "header", fontSize: 14, color: COLORS.PRIMARY, margin: [0, 0, 0, 10] },
           {
             table: {
               headerRows: 1,
-              widths: ["*", "auto", "auto", 85, "auto", "auto"],
+              // Ajuste fino das larguras para caber tudo
+              widths: ["*", 40, 70, 85, 70, "auto"],
               body: [
-                // Cabeçalho
+                // Cabeçalho da Tabela
                 [
                   { text: "NOME", style: "tableHeader" },
                   { text: "SEXO", style: "tableHeader" },
-                  { text: "DATA NASCIMENTO", style: "tableHeader" },
+                  { text: "NASCIMENTO", style: "tableHeader" },
                   { text: "CPF", style: "tableHeader" },
                   { text: "SALÁRIO", style: "tableHeader" },
                   { text: "CLASSIFICAÇÃO", style: "tableHeader" },
                 ],
-                // Linhas
+                // Linhas de Dados
                 ...colaboradores.map((colab, index) => {
                   const rowStyle = index % 2 === 0 ? "tableRow" : "tableRowOdd";
                   return [
@@ -282,7 +295,8 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
                     { text: formatDataPTBR(colab.data_nascimento), alignment: "center", style: rowStyle },
                     { text: formatCPF(colab.cpf), alignment: "center", style: rowStyle },
                     { text: formatCurrency(colab.salario), alignment: "right", style: rowStyle },
-                    { text: colab.cargo || "-", style: rowStyle }, // Usando Cargo como Classificação
+                    // Usando classificacao_salario conforme solicitado
+                    { text: colab.classificacao_salario || colab.cargo || "-", style: rowStyle },
                   ];
                 }),
               ],
@@ -296,27 +310,35 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
               },
             },
           },
+
+          // Rodapé da Tabela (Totalizador)
+          {
+            text: `Total de Vidas: ${colaboradores.length}`,
+            bold: true,
+            alignment: "right",
+            margin: [0, 10, 0, 0],
+            fontSize: 10,
+          },
         ],
 
         styles: {
-          header: { bold: true, fontSize: 12, margin: [0, 0, 0, 10] },
           tableHeader: {
             bold: true,
             fontSize: 8,
             color: "white",
             fillColor: COLORS.PRIMARY,
             alignment: "center",
-            margin: [0, 4, 0, 4],
+            margin: [0, 5, 0, 5],
           },
           tableRow: {
             fontSize: 8,
             color: COLORS.TEXT_MAIN,
-            margin: [0, 3, 0, 3],
+            margin: [0, 4, 0, 4],
           },
           tableRowOdd: {
             fontSize: 8,
             color: COLORS.TEXT_MAIN,
-            margin: [0, 3, 0, 3],
+            margin: [0, 4, 0, 4],
           },
         },
         defaultStyle: {
