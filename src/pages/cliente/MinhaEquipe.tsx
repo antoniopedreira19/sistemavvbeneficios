@@ -11,6 +11,8 @@ import {
   Info,
   Pencil,
   Building,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,7 @@ const MinhaEquipe = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedObra, setSelectedObra] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [mostrarDesligados, setMostrarDesligados] = useState(false);
 
   // Estados dos Modais
   const [isNovoColaboradorOpen, setIsNovoColaboradorOpen] = useState(false);
@@ -73,16 +76,20 @@ const MinhaEquipe = () => {
     enabled: !!empresaId,
   });
 
-  // 2. Buscar Colaboradores (Apenas Ativos)
+  // 2. Buscar Colaboradores (filtra por mostrarDesligados)
   const { data: colaboradoresData, isLoading: colaboradoresLoading } = useQuery({
-    queryKey: ["colaboradores", empresaId, selectedObra, searchTerm, currentPage],
+    queryKey: ["colaboradores", empresaId, selectedObra, searchTerm, currentPage, mostrarDesligados],
     queryFn: async () => {
       if (!empresaId) return { data: [], count: 0 };
       let query = supabase
         .from("colaboradores")
         .select("*, obras(nome)", { count: "exact" })
-        .eq("empresa_id", empresaId)
-        .eq("status", "ativo"); // Filtro para ocultar desligados
+        .eq("empresa_id", empresaId);
+
+      // Filtrar por status baseado no toggle
+      if (!mostrarDesligados) {
+        query = query.eq("status", "ativo");
+      }
 
       if (selectedObra !== "all") query = query.eq("obra_id", selectedObra);
       if (searchTerm) query = query.or(`nome.ilike.%${searchTerm}%,cpf.ilike.%${searchTerm}%`);
@@ -101,7 +108,7 @@ const MinhaEquipe = () => {
   const { data: stats } = useQuery({
     queryKey: ["colaboradores-stats", empresaId],
     queryFn: async () => {
-      if (!empresaId) return { ativos: 0, afastados: 0 };
+      if (!empresaId) return { ativos: 0, afastados: 0, desligados: 0 };
 
       const { count: ativos } = await supabase
         .from("colaboradores")
@@ -114,9 +121,15 @@ const MinhaEquipe = () => {
         .from("colaboradores")
         .select("*", { count: "exact", head: true })
         .eq("empresa_id", empresaId)
-        .eq("afastado", true); // Afastados geralmente contam como ativos no sistema mas com flag
+        .eq("afastado", true);
 
-      return { ativos: ativos || 0, afastados: afastados || 0 };
+      const { count: desligados } = await supabase
+        .from("colaboradores")
+        .select("*", { count: "exact", head: true })
+        .eq("empresa_id", empresaId)
+        .eq("status", "desligado");
+
+      return { ativos: ativos || 0, afastados: afastados || 0, desligados: desligados || 0 };
     },
     enabled: !!empresaId,
   });
@@ -183,8 +196,8 @@ const MinhaEquipe = () => {
         </AlertDescription>
       </Alert>
 
-      {/* Resumo Estatístico - Sem Card Total */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Resumo Estatístico */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Ativos</CardTitle>
@@ -199,6 +212,14 @@ const MinhaEquipe = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">{stats?.afastados}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Desligados</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{stats?.desligados}</div>
           </CardContent>
         </Card>
       </div>
@@ -241,6 +262,18 @@ const MinhaEquipe = () => {
                 </SelectContent>
               </Select>
             </div>
+            <Button
+              variant={mostrarDesligados ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setMostrarDesligados(!mostrarDesligados);
+                setCurrentPage(1);
+              }}
+              className="gap-2"
+            >
+              {mostrarDesligados ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {mostrarDesligados ? "Ocultar Desligados" : "Mostrar Desligados"}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -270,7 +303,7 @@ const MinhaEquipe = () => {
                   {colaboradores.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Nenhum colaborador ativo encontrado.
+                        {mostrarDesligados ? "Nenhum colaborador encontrado." : "Nenhum colaborador ativo encontrado."}
                       </TableCell>
                     </TableRow>
                   ) : (
