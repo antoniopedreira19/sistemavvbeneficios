@@ -11,17 +11,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { FileText, Loader2, Printer, CalendarIcon } from "lucide-react";
+import { FileText, Loader2, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+
+// IMPORTANTE: A imagem deve existir nesta pasta
 import logoAdendo from "@/assets/logo-vv-adendo.png";
 
 // CORES DO SISTEMA
@@ -42,23 +39,6 @@ if (fontsModule?.pdfMake?.vfs) {
   (pdfMake as any).vfs = fontsModule.vfs;
 }
 
-// Converte imagem importada para base64
-const getBase64FromImportedImage = (imgSrc: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.onerror = () => resolve("");
-    img.src = imgSrc;
-  });
-};
-
 interface GerarAdendoBtnProps {
   empresaId: string;
   variant?: "default" | "outline" | "ghost";
@@ -71,12 +51,27 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
   // Estados do Formulário
   const [apolice, setApolice] = useState("");
-  const [dataInicio, setDataInicio] = useState<Date | undefined>();
-  const [dataFim, setDataFim] = useState<Date | undefined>();
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
 
-  // Carrega a logo como base64 ao montar o componente
+  // --- SOLUÇÃO ROBUSTA: Carrega a imagem via fetch e converte para Base64 ---
   useEffect(() => {
-    getBase64FromImportedImage(logoAdendo).then(setLogoBase64);
+    const loadLogo = async () => {
+      try {
+        const response = await fetch(logoAdendo);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            setLogoBase64(reader.result);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (error) {
+        console.error("Erro ao carregar logo:", error);
+      }
+    };
+    loadLogo();
   }, []);
 
   const getDataAtualExtenso = () => {
@@ -101,13 +96,10 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
     return `Salvador, ${dia} de ${mes} de ${ano}`;
   };
 
-  const formatDataPTBR = (date: Date | string | undefined) => {
-    if (!date) return "--/--/----";
-    if (typeof date === "string") {
-      const [year, month, day] = date.split("-");
-      return `${day}/${month}/${year}`;
-    }
-    return format(date, "dd/MM/yyyy");
+  const formatDataPTBR = (dateString: string) => {
+    if (!dateString) return "--/--/----";
+    const [year, month, day] = dateString.split("-");
+    return `${day}/${month}/${year}`;
   };
 
   const gerarDocumento = async () => {
@@ -118,7 +110,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
     setLoading(true);
     try {
-
       const { data: empresa, error: erroEmpresa } = await supabase
         .from("empresas")
         .select("*")
@@ -162,10 +153,10 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
             logoBase64
               ? {
                   image: logoBase64,
-                  width: 60, // Logo menor
+                  width: 60, // Tamanho da logo
                   alignment: "right",
                 }
-              : null,
+              : { text: "VV BENEFÍCIOS", fontSize: 14, bold: true, alignment: "right" }, // Fallback se a logo falhar
           ],
         },
 
@@ -233,7 +224,7 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
               { text: "Telefone: ", bold: true },
               "(71) 99692-8880",
             ],
-            margin: [0, 0, 0, 0], // Margem inferior controlada pela posição absoluta da assinatura
+            margin: [0, 0, 0, 0],
             lineHeight: 1.4,
           },
 
@@ -372,56 +363,12 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label>Vigência (Início)</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dataInicio && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dataInicio ? format(dataInicio, "dd/MM/yyyy") : "Selecione"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dataInicio}
-                    onSelect={setDataInicio}
-                    locale={ptBR}
-                    className="pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
+              <Label htmlFor="inicio">Vigência (Início)</Label>
+              <Input id="inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
             </div>
             <div className="grid gap-2">
-              <Label>Vigência (Fim)</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dataFim && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dataFim ? format(dataFim, "dd/MM/yyyy") : "Selecione"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dataFim}
-                    onSelect={setDataFim}
-                    locale={ptBR}
-                    className="pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
+              <Label htmlFor="fim">Vigência (Fim)</Label>
+              <Input id="fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
           </div>
         </div>
