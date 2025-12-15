@@ -773,6 +773,7 @@ export type Database = {
       get_empresas_pendentes: {
         Args: { p_competencia: string }
         Returns: {
+          cnpj: string
           email: string
           id: string
           nome: string
