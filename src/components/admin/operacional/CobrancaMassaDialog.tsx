@@ -75,7 +75,7 @@ export function CobrancaMassaDialog() {
     },
   });
 
-  // 2. Ação: Chamar o n8n para enviar os emails
+  // 2. Ação: Chamar edge function para enviar via n8n
   const handleDispararCobranca = async () => {
     if (pendentes.length === 0) return;
 
@@ -83,30 +83,22 @@ export function CobrancaMassaDialog() {
 
     setDisparando(true);
     try {
-      const N8N_WEBHOOK_URL = "https://grifoworkspace.app.n8n.cloud/webhook/cobrancas-listas";
-
-      // Enviar dados completos de cada empresa
+      // Envia apenas nome e email de cada empresa
       const empresasPayload = pendentes.map((emp) => ({
-        id: emp.id,
         nome: emp.nome,
-        cnpj: emp.cnpj,
         email: emp.email,
-        responsavel: emp.responsavel,
       }));
 
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+      const { data, error } = await supabase.functions.invoke("disparar-cobranca-massa", {
+        body: { 
           competencia,
           empresas: empresasPayload,
-          total: pendentes.length,
-        }),
+        },
       });
 
-      if (!response.ok) throw new Error("Erro ao comunicar com n8n");
+      if (error) throw error;
 
-      toast.success(`Comando de cobrança enviado para ${pendentes.length} empresas!`);
+      toast.success(`Cobrança enviada para ${pendentes.length} empresas!`);
       setOpen(false);
     } catch (error) {
       toast.error("Erro ao disparar cobrança.");
