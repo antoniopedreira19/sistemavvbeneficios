@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatCNPJ } from "@/lib/validators";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -208,7 +209,7 @@ export function CRMList() {
                           <span className="font-medium text-base truncate" title={empresa.nome}>
                             {empresa.nome.toUpperCase()}
                           </span>
-                          <span className="text-xs text-muted-foreground font-mono">{empresa.cnpj}</span>
+                          <span className="text-xs text-muted-foreground font-mono">{formatCNPJ(empresa.cnpj)}</span>
                         </div>
                       </TableCell>
                       <TableCell>
