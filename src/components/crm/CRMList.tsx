@@ -44,6 +44,13 @@ const toTitleCase = (str: string) => {
     .join(" ");
 };
 
+// Helper para extrair primeiro responsável de string ou array
+const getFirstResponsavel = (nome_responsavel: string | string[] | null): string | null => {
+  if (!nome_responsavel) return null;
+  if (Array.isArray(nome_responsavel)) return nome_responsavel[0] || null;
+  return nome_responsavel;
+};
+
 export function CRMList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [contratoFilter, setContratoFilter] = useState<ContratoFilterType>("todos");
@@ -205,9 +212,9 @@ export function CRMList() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="truncate max-w-[180px]" title={empresa.nome_responsavel || ""}>
-                          {empresa.nome_responsavel ? (
-                            toTitleCase(empresa.nome_responsavel)
+                        <div className="truncate max-w-[180px]" title={getFirstResponsavel(empresa.nome_responsavel) || ""}>
+                          {getFirstResponsavel(empresa.nome_responsavel) ? (
+                            toTitleCase(getFirstResponsavel(empresa.nome_responsavel)!)
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}

@@ -293,6 +293,7 @@ export type Database = {
           emails_contato: Json | null
           endereco: string | null
           id: string
+          implantada: boolean | null
           nome: string
           nome_responsavel: string | null
           responsavel_cpf: Json | null
@@ -310,6 +311,7 @@ export type Database = {
           emails_contato?: Json | null
           endereco?: string | null
           id?: string
+          implantada?: boolean | null
           nome: string
           nome_responsavel?: string | null
           responsavel_cpf?: Json | null
@@ -327,6 +329,7 @@ export type Database = {
           emails_contato?: Json | null
           endereco?: string | null
           id?: string
+          implantada?: boolean | null
           nome?: string
           nome_responsavel?: string | null
           responsavel_cpf?: Json | null
