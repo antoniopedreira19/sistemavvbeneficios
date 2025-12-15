@@ -23,7 +23,7 @@ import { toast } from "@/hooks/use-toast";
 import { EmpresaCRM, LOTE_STATUS_LABELS, CRM_FUNNEL_STATUSES } from "@/types/crm";
 import { EditarEmpresaDialog } from "@/components/admin/EditarEmpresaDialog";
 import { supabase } from "@/integrations/supabase/client";
-// ADICIONADO: Import do Botão de Gerar Adendo
+// 1. Importando o botão
 import { GerarAdendoBtn } from "@/components/shared/GerarAdendoBtn";
 
 interface EmpresaDetailDialogProps {
@@ -188,9 +188,6 @@ const EmpresaDetailDialog = ({
                 Detalhes da Empresa
               </span>
               <div className="flex items-center gap-2">
-                {/* ADICIONADO: Botão Gerar Adendo */}
-                <GerarAdendoBtn empresaId={empresa.id} variant="outline" />
-
                 <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(true)}>
                   <Pencil className="h-4 w-4 mr-1" />
                   Editar
@@ -302,41 +299,51 @@ const EmpresaDetailDialog = ({
                 })()}
               </div>
 
-              {/* Contrato Digital */}
+              {/* Seção de Contrato e Documentos */}
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wide flex items-center gap-1">
                   <FileText className="h-3 w-3" />
                   Contrato
                 </Label>
-                {empresa.contrato_url ? (
-                  <div className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800">
-                    <FileText className="h-4 w-4 text-green-600 shrink-0 dark:text-green-400" />
-                    <span className="text-sm text-green-700 font-medium flex-1 dark:text-green-300">
-                      Contrato Anexado
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.open(empresa.contrato_url!, "_blank")}
-                        className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleDownloadContrato}
-                        disabled={downloading}
-                        className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
-                      >
-                        <Download className="h-3.5 w-3.5 mr-1" /> {downloading ? "..." : "Baixar"}
-                      </Button>
+
+                <div className="flex flex-col gap-3">
+                  {/* Bloco de Status do Contrato */}
+                  {empresa.contrato_url ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800">
+                      <div className="flex items-center gap-2 flex-1">
+                        <FileText className="h-4 w-4 text-green-600 shrink-0 dark:text-green-400" />
+                        <span className="text-sm text-green-700 font-medium dark:text-green-300">Contrato Anexado</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 self-end sm:self-auto">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(empresa.contrato_url!, "_blank")}
+                          className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 mr-1" /> Abrir
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleDownloadContrato}
+                          disabled={downloading}
+                          className="h-7 px-2 hover:bg-green-100 text-green-700 dark:hover:bg-green-800/50 dark:text-green-300"
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1" /> {downloading ? "..." : "Baixar"}
+                        </Button>
+                      </div>
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic px-1">Nenhum contrato anexado</p>
+                  )}
+
+                  {/* 2. Botão de Gerar Adendo - Posicionado EMBAIXO, sempre visível */}
+                  <div className="flex justify-start">
+                    <GerarAdendoBtn empresaId={empresa.id} variant="outline" />
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">Nenhum contrato anexado</p>
-                )}
+                </div>
               </div>
             </div>
 
