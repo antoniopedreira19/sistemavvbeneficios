@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,20 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Obter user_id do token de autorização
+    const authHeader = req.headers.get("Authorization");
+    let userId: string | null = null;
+    
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      const { data: { user } } = await supabase.auth.getUser(token);
+      userId = user?.id || null;
+    }
+
     const { competencia, empresas } = await req.json();
 
     if (!empresas || empresas.length === 0) {
@@ -49,6 +64,20 @@ serve(async (req) => {
 
     const result = await response.text();
     console.log("Resposta n8n:", result);
+
+    // Salvar no histórico
+    const { error: histError } = await supabase
+      .from("historico_cobrancas")
+      .insert({
+        competencia,
+        total_empresas: empresas.length,
+        empresas_notificadas: empresas,
+        disparado_por: userId,
+      });
+
+    if (histError) {
+      console.error("Erro ao salvar histórico:", histError);
+    }
 
     return new Response(
       JSON.stringify({ success: true, message: `Cobrança enviada para ${empresas.length} empresas` }),

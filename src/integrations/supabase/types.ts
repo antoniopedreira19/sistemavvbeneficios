@@ -341,6 +341,33 @@ export type Database = {
         }
         Relationships: []
       }
+      historico_cobrancas: {
+        Row: {
+          competencia: string
+          created_at: string
+          disparado_por: string | null
+          empresas_notificadas: Json
+          id: string
+          total_empresas: number
+        }
+        Insert: {
+          competencia: string
+          created_at?: string
+          disparado_por?: string | null
+          empresas_notificadas?: Json
+          id?: string
+          total_empresas?: number
+        }
+        Update: {
+          competencia?: string
+          created_at?: string
+          disparado_por?: string | null
+          empresas_notificadas?: Json
+          id?: string
+          total_empresas?: number
+        }
+        Relationships: []
+      }
       historico_logs: {
         Row: {
           acao: string
