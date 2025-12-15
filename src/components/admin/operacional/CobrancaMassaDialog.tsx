@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Dialog,
   DialogContent,
@@ -16,13 +18,35 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MailWarning, Loader2, Send } from "lucide-react";
 
+// Gera competência atual no formato "Mês/Ano"
+const getCompetenciaAtual = () => {
+  const now = new Date();
+  const mes = format(now, "MMMM", { locale: ptBR });
+  const mesCapitalizado = mes.charAt(0).toUpperCase() + mes.slice(1);
+  return `${mesCapitalizado}/${now.getFullYear()}`;
+};
+
+// Gera lista de competências (últimos 3 meses + próximos 3 meses)
+const gerarCompetencias = () => {
+  const competencias: string[] = [];
+  const now = new Date();
+  
+  for (let i = -3; i <= 3; i++) {
+    const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const mes = format(date, "MMMM", { locale: ptBR });
+    const mesCapitalizado = mes.charAt(0).toUpperCase() + mes.slice(1);
+    competencias.push(`${mesCapitalizado}/${date.getFullYear()}`);
+  }
+  
+  return competencias;
+};
+
 export function CobrancaMassaDialog() {
   const [open, setOpen] = useState(false);
-  const [competencia, setCompetencia] = useState("Janeiro/2025"); // Padrão ou dinâmico
+  const [competencia, setCompetencia] = useState(getCompetenciaAtual());
   const [disparando, setDisparando] = useState(false);
 
-  // Lista de competências para facilitar (pode ser dinâmica no futuro)
-  const competencias = ["Novembro/2024", "Dezembro/2024", "Janeiro/2025", "Fevereiro/2025", "Março/2025"];
+  const competencias = gerarCompetencias();
 
   interface EmpresaPendente {
     id: string;
