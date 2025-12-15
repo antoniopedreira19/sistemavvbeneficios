@@ -11,12 +11,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Loader2, Printer } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FileText, Loader2, Printer, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 import logoAdendo from "@/assets/logo-vv-adendo.png";
 
 // CORES DO SISTEMA
@@ -66,8 +71,8 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
   // Estados do Formulário
   const [apolice, setApolice] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
+  const [dataInicio, setDataInicio] = useState<Date | undefined>();
+  const [dataFim, setDataFim] = useState<Date | undefined>();
 
   // Carrega a logo como base64 ao montar o componente
   useEffect(() => {
@@ -96,10 +101,13 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
     return `Salvador, ${dia} de ${mes} de ${ano}`;
   };
 
-  const formatDataPTBR = (dateString: string) => {
-    if (!dateString) return "--/--/----";
-    const [year, month, day] = dateString.split("-");
-    return `${day}/${month}/${year}`;
+  const formatDataPTBR = (date: Date | string | undefined) => {
+    if (!date) return "--/--/----";
+    if (typeof date === "string") {
+      const [year, month, day] = date.split("-");
+      return `${day}/${month}/${year}`;
+    }
+    return format(date, "dd/MM/yyyy");
   };
 
   const gerarDocumento = async () => {
@@ -364,12 +372,56 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="inicio">Vigência (Início)</Label>
-              <Input id="inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <Label>Vigência (Início)</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dataInicio && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dataInicio ? format(dataInicio, "dd/MM/yyyy") : "Selecione"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dataInicio}
+                    onSelect={setDataInicio}
+                    locale={ptBR}
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="fim">Vigência (Fim)</Label>
-              <Input id="fim" type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <Label>Vigência (Fim)</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dataFim && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dataFim ? format(dataFim, "dd/MM/yyyy") : "Selecione"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dataFim}
+                    onSelect={setDataFim}
+                    locale={ptBR}
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </div>
