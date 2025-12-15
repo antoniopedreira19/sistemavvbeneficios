@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,10 +17,7 @@ import { toast } from "sonner";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import { formatCPF, formatCNPJ, formatCurrency } from "@/lib/validators";
-
-// URL DA LOGO
-const LOGO_URL =
-  "https://gkmobhbmgxwrpuucoykn.supabase.co/storage/v1/object/public/MainBucket/Gemini_Generated_Image_c0slgsc0slgsc0sl-removebg-preview.png";
+import logoAdendo from "@/assets/logo-vv-adendo.png";
 
 // CORES DO SISTEMA
 const COLORS = {
@@ -40,6 +37,23 @@ if (fontsModule?.pdfMake?.vfs) {
   (pdfMake as any).vfs = fontsModule.vfs;
 }
 
+// Converte imagem importada para base64
+const getBase64FromImportedImage = (imgSrc: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve("");
+    img.src = imgSrc;
+  });
+};
+
 interface GerarAdendoBtnProps {
   empresaId: string;
   variant?: "default" | "outline" | "ghost";
@@ -48,29 +62,17 @@ interface GerarAdendoBtnProps {
 export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBtnProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [logoBase64, setLogoBase64] = useState<string>("");
 
   // Estados do Formulário
   const [apolice, setApolice] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
 
-  const getBase64ImageFromURL = (url: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.setAttribute("crossOrigin", "anonymous");
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0);
-        const dataURL = canvas.toDataURL("image/png");
-        resolve(dataURL);
-      };
-      img.onerror = () => resolve("");
-      img.src = url;
-    });
-  };
+  // Carrega a logo como base64 ao montar o componente
+  useEffect(() => {
+    getBase64FromImportedImage(logoAdendo).then(setLogoBase64);
+  }, []);
 
   const getDataAtualExtenso = () => {
     const data = new Date();
@@ -108,7 +110,6 @@ export function GerarAdendoBtn({ empresaId, variant = "outline" }: GerarAdendoBt
 
     setLoading(true);
     try {
-      const logoBase64 = await getBase64ImageFromURL(LOGO_URL);
 
       const { data: empresa, error: erroEmpresa } = await supabase
         .from("empresas")
