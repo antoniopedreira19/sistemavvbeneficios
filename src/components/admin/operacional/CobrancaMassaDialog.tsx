@@ -11,13 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MailWarning, Loader2, Send } from "lucide-react";
@@ -28,12 +22,14 @@ export function CobrancaMassaDialog() {
   const [disparando, setDisparando] = useState(false);
 
   // Lista de competências para facilitar (pode ser dinâmica no futuro)
-  const competencias = [
-    "Novembro/2024", "Dezembro/2024", "Janeiro/2025", "Fevereiro/2025", "Março/2025"
-  ];
+  const competencias = ["Novembro/2024", "Dezembro/2024", "Janeiro/2025", "Fevereiro/2025", "Março/2025"];
 
   // 1. Busca prévia: Quem está pendente?
-  const { data: pendentes = [], isLoading, refetch } = useQuery({
+  const {
+    data: pendentes = [],
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["empresas-pendentes", competencia],
     enabled: open, // Só busca quando abre o modal
     queryFn: async () => {
@@ -54,8 +50,8 @@ export function CobrancaMassaDialog() {
     setDisparando(true);
     try {
       // Substitua pela URL do seu Webhook do n8n criado na Parte 2
-      const N8N_WEBHOOK_URL = "https://seu-n8n.com/webhook/disparar-cobranca";
-      
+      const N8N_WEBHOOK_URL = "https://grifoworkspace.app.n8n.cloud/webhook/cobrancas-listas";
+
       const response = await fetch(N8N_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,8 +89,8 @@ export function CobrancaMassaDialog() {
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label>Selecione a Competência</Label>
-            <Select 
-              value={competencia} 
+            <Select
+              value={competencia}
               onValueChange={(val) => {
                 setCompetencia(val);
                 setTimeout(() => refetch(), 100); // Atualiza a contagem ao mudar
@@ -105,7 +101,9 @@ export function CobrancaMassaDialog() {
               </SelectTrigger>
               <SelectContent>
                 {competencias.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -131,16 +129,22 @@ export function CobrancaMassaDialog() {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-          <Button 
-            onClick={handleDispararCobranca} 
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleDispararCobranca}
             disabled={pendentes.length === 0 || disparando || isLoading}
             className="bg-red-600 hover:bg-red-700"
           >
             {disparando ? (
-              <>Enviando... <Loader2 className="ml-2 h-4 w-4 animate-spin" /></>
+              <>
+                Enviando... <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+              </>
             ) : (
-              <>Enviar {pendentes.length} E-mails <Send className="ml-2 h-4 w-4" /></>
+              <>
+                Enviar {pendentes.length} E-mails <Send className="ml-2 h-4 w-4" />
+              </>
             )}
           </Button>
         </DialogFooter>
