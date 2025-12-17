@@ -11,43 +11,45 @@ import { Loader2, Mail, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import logo from "@/assets/logo-vv-beneficios.png";
 import logoTransparente from "@/assets/logo-vv-beneficios-transparente.png"; // Logo sem fundo para o box branco
 import logoSidebar from "@/assets/logo-vv-sidebar.png";
-
 const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const { signIn, user } = useAuth();
-  const { toast } = useToast();
+  const {
+    signIn,
+    user
+  } = useAuth();
+  const {
+    toast
+  } = useToast();
   const navigate = useNavigate();
 
   // Cores do sistema
   const BRAND_COLOR = "#203455";
-
   useEffect(() => {
     if (user) {
       navigate("/");
     }
   }, [user, navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const { error } = await signIn(email, password);
+      const {
+        error
+      } = await signIn(email, password);
       if (error) {
         toast({
           title: "Acesso Negado",
           description: "Credenciais inválidas. Verifique seu e-mail e senha.",
-          variant: "destructive",
+          variant: "destructive"
         });
       } else {
         toast({
           title: "Login realizado",
           description: "Acessando o sistema...",
-          action: <CheckCircle2 className="h-5 w-5 text-green-500" />,
+          action: <CheckCircle2 className="h-5 w-5 text-green-500" />
         });
         navigate("/");
       }
@@ -55,28 +57,24 @@ const Auth = () => {
       toast({
         title: "Erro de Conexão",
         description: "Tente novamente mais tarde.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
-
-  return (
-    <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
+  return <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
       {/* --- COLUNA ESQUERDA (BRANDING) --- */}
       <div className="hidden lg:flex relative flex-col items-center justify-center bg-muted text-white h-full overflow-hidden">
         {/* Fundo Base */}
-        <div className="absolute inset-0 z-0" style={{ backgroundColor: BRAND_COLOR }} />
+        <div className="absolute inset-0 z-0" style={{
+        backgroundColor: BRAND_COLOR
+      }} />
 
         {/* Imagem de Fundo (Textura Profissional) */}
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-overlay"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=2070')",
-          }}
-        />
+        <div className="absolute inset-0 bg-cover bg-center opacity-10 mix-blend-overlay" style={{
+        backgroundImage: "url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=2070')"
+      }} />
 
         {/* Gradiente Suave */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#203455]/50 to-[#203455]" />
@@ -129,16 +127,7 @@ const Auth = () => {
               </Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="nome@empresa.com"
-                  className="pl-10 h-11 border-gray-200 focus:border-[#203455] focus:ring-1 focus:ring-[#203455] transition-all"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
-                  required
-                />
+                <Input id="email" type="email" placeholder="nome@empresa.com" className="pl-10 h-11 border-gray-200 focus:border-[#203455] focus:ring-1 focus:ring-[#203455] transition-all" value={email} onChange={e => setEmail(e.target.value)} disabled={loading} required />
               </div>
             </div>
 
@@ -148,52 +137,27 @@ const Auth = () => {
                 <Label htmlFor="password" className="text-[#203455] font-semibold">
                   Senha
                 </Label>
-                <a href="#" className="text-xs text-blue-600 hover:text-blue-800 hover:underline">
-                  Esqueceu a senha?
-                </a>
+                
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  className="pl-10 pr-10 h-11 border-gray-200 focus:border-[#203455] focus:ring-1 focus:ring-[#203455] transition-all"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-gray-400 hover:text-[#203455] transition-colors"
-                >
+                <Input id="password" type={showPassword ? "text" : "password"} placeholder="••••••••" className="pl-10 pr-10 h-11 border-gray-200 focus:border-[#203455] focus:ring-1 focus:ring-[#203455] transition-all" value={password} onChange={e => setPassword(e.target.value)} disabled={loading} required />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400 hover:text-[#203455] transition-colors">
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full h-11 bg-[#203455] hover:bg-[#2c456b] text-white font-bold text-base shadow-md hover:shadow-lg transition-all"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
+            <Button type="submit" disabled={loading} className="w-full h-11 bg-[#203455] hover:bg-[#2c456b] text-white font-bold text-base shadow-md hover:shadow-lg transition-all">
+              {loading ? <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" /> Acessando...
-                </div>
-              ) : (
-                "Entrar na Plataforma"
-              )}
+                </div> : "Entrar na Plataforma"}
             </Button>
           </form>
 
-          <p className="px-8 text-center text-xs text-muted-foreground">Acesso restrito. Protegido por reCAPTCHA.</p>
+          
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Auth;
