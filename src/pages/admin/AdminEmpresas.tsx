@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Building2, List, KanbanSquare, Plus, ArchiveX } from "lucide-react";
+import { Building2, List, KanbanSquare, Plus, ArchiveX, Download } from "lucide-react";
+import * as XLSX from "xlsx";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
@@ -8,6 +11,68 @@ import { CRMKanban } from "@/components/crm/CRMKanban";
 import { CRMInactiveList } from "@/components/crm/CRMInactiveList";
 export default function AdminEmpresas() {
   const [isNovaEmpresaOpen, setIsNovaEmpresaOpen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleBaixarVidas = async () => {
+    setIsDownloading(true);
+    toast.info("Gerando relatório...");
+
+    try {
+      const { data, error } = await supabase
+        .from("colaboradores")
+        .select(`
+          nome,
+          sexo,
+          salario,
+          classificacao_salario,
+          empresas!inner(nome),
+          obras(nome)
+        `)
+        .eq("status", "ativo")
+        .order("nome");
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        toast.warning("Nenhuma vida ativa encontrada.");
+        setIsDownloading(false);
+        return;
+      }
+
+      const dadosFormatados = data.map((colab: any) => ({
+        "Empresa": colab.empresas?.nome || "",
+        "Obra": colab.obras?.nome || "Sem obra",
+        "Nome": colab.nome || "",
+        "Sexo": colab.sexo || "",
+        "Salário": colab.salario 
+          ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(colab.salario)
+          : "",
+        "Classificação do Salário": colab.classificacao_salario || "",
+      }));
+
+      // Ordenar por Empresa → Obra → Nome
+      dadosFormatados.sort((a, b) => {
+        if (a.Empresa !== b.Empresa) return a.Empresa.localeCompare(b.Empresa);
+        if (a.Obra !== b.Obra) return a.Obra.localeCompare(b.Obra);
+        return a.Nome.localeCompare(b.Nome);
+      });
+
+      const ws = XLSX.utils.json_to_sheet(dadosFormatados);
+      ws["!cols"] = Array(6).fill({ wch: 35 });
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Vidas Ativas");
+      XLSX.writeFile(wb, "vidas_ativas.xlsx");
+
+      toast.success(`${data.length} vidas exportadas com sucesso!`);
+    } catch (error: any) {
+      console.error("Erro ao exportar vidas:", error);
+      toast.error("Erro ao gerar relatório: " + error.message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -17,10 +82,16 @@ export default function AdminEmpresas() {
             <p className="text-muted-foreground">Gerencie sua carteira de clientes</p>
           </div>
         </div>
-        <Button onClick={() => setIsNovaEmpresaOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Empresa
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleBaixarVidas} disabled={isDownloading}>
+            <Download className="mr-2 h-4 w-4" />
+            Baixar Vidas
+          </Button>
+          <Button onClick={() => setIsNovaEmpresaOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Empresa
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="ativos" className="w-full">
