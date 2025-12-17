@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
-import logo from "@/assets/logo-vv-beneficios.png"; // Usando a logo com fundo/cor para contrastar no branco, ou a transparente se preferir
+import logo from "@/assets/logo-vv-beneficios.png";
+import logoSidebar from "@/assets/logo-vv-sidebar.png";
 
 const Auth = () => {
   const [email, setEmail] = useState("");
@@ -70,8 +71,7 @@ const Auth = () => {
 
         <div className="relative z-20 flex items-center p-10 font-medium text-lg">
           <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
-            <img src={logo} alt="VV Logo" className="h-8 w-auto brightness-0 invert" />
-            {/* brightness-0 invert deixa a logo branca se for preta/colorida */}
+            <img src={logoSidebar} alt="VV Logo" className="h-8 w-auto" />
           </div>
           <span className="ml-3 font-semibold tracking-wide">VV Benefícios</span>
         </div>
