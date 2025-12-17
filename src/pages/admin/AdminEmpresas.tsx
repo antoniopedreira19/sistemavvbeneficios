@@ -18,26 +18,44 @@ export default function AdminEmpresas() {
     toast.info("Gerando relatório...");
 
     try {
-      const { data, error } = await supabase
-        .from("colaboradores")
-        .select(`
-          nome,
-          sexo,
-          salario,
-          classificacao_salario,
-          empresas!inner(nome),
-          obras(nome)
-        `)
-        .eq("status", "ativo")
-        .order("nome");
+      const PAGE_SIZE = 1000;
+      let allData: any[] = [];
+      let page = 0;
+      let hasMore = true;
 
-      if (error) throw error;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("colaboradores")
+          .select(`
+            nome,
+            sexo,
+            salario,
+            classificacao_salario,
+            empresas!inner(nome),
+            obras(nome)
+          `)
+          .eq("status", "ativo")
+          .order("nome")
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (!data || data.length === 0) {
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          page++;
+          hasMore = data.length === PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allData.length === 0) {
         toast.warning("Nenhuma vida ativa encontrada.");
         setIsDownloading(false);
         return;
       }
+
+      const data = allData;
 
       const dadosFormatados = data.map((colab: any) => ({
         "Empresa": colab.empresas?.nome || "",
