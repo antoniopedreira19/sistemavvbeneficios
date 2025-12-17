@@ -6,7 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
-import logo from "@/assets/logo-vv-beneficios.png"; // Logo colorida para usar no box branco
+
+// IMPORTS DE ASSETS
+import logo from "@/assets/logo-vv-beneficios.png";
+import logoTransparente from "@/assets/logo-vv-beneficios-transparente.png"; // Logo sem fundo para o box branco
 import logoSidebar from "@/assets/logo-vv-sidebar.png";
 
 const Auth = () => {
@@ -79,27 +82,28 @@ const Auth = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#203455]/50 to-[#203455]" />
 
         {/* CONTEÚDO CENTRALIZADO */}
-        <div className="relative z-10 flex flex-col items-center max-w-lg text-center p-8">
-          {/* Logo Box com Animação Lenta */}
-          {/* animate-pulse cria um efeito de respiração suave */}
-          <div className="bg-white p-8 rounded-3xl shadow-2xl mb-10 animate-pulse duration-[3000ms]">
-            <img src={logo} alt="VV Logo" className="h-24 w-auto object-contain" />
+        <div className="relative z-10 flex flex-col items-center max-w-xl text-center p-8">
+          {/* Logo Box - ANIMAÇÃO DE ENTRADA SUAVE (Sem piscar) */}
+          <div className="bg-white p-10 rounded-[2rem] shadow-2xl mb-12 animate-in fade-in zoom-in-95 duration-1000 ease-out hover:scale-105 transition-transform">
+            <img src={logoTransparente} alt="VV Logo" className="h-32 w-auto object-contain" />
           </div>
 
           {/* Frase e Textos */}
-          <blockquote className="space-y-4">
-            <p className="text-3xl font-bold leading-snug tracking-tight text-white drop-shadow-md">
+          <blockquote className="space-y-6 animate-in slide-in-from-bottom-8 fade-in duration-1000 delay-300 fill-mode-backwards">
+            <p className="text-3xl md:text-4xl font-bold leading-snug tracking-tight text-white drop-shadow-lg">
               "Gestão inteligente e humanizada para o ativo mais importante da sua empresa: as pessoas."
             </p>
-            <div className="w-24 h-1 bg-white/30 mx-auto rounded-full my-6" /> {/* Divisor decorativo */}
-            <p className="text-sm text-blue-100 font-light tracking-widest uppercase opacity-80">
+
+            <div className="w-24 h-1.5 bg-white/20 mx-auto rounded-full my-8" />
+
+            <p className="text-base text-blue-100 font-medium tracking-widest uppercase opacity-90">
               Sistema Integrado VV Benefícios
             </p>
           </blockquote>
         </div>
 
         {/* Rodapé Discreto */}
-        <div className="absolute bottom-6 text-xs text-white/40">
+        <div className="absolute bottom-8 text-xs text-white/40">
           &copy; {new Date().getFullYear()} Todos os direitos reservados.
         </div>
       </div>
