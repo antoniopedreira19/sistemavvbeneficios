@@ -9,6 +9,8 @@ import { NovaEmpresaDialog } from "@/components/admin/NovaEmpresaDialog";
 import { CRMList } from "@/components/crm/CRMList";
 import { CRMKanban } from "@/components/crm/CRMKanban";
 import { CRMInactiveList } from "@/components/crm/CRMInactiveList";
+import { formatCPF } from "@/lib/validators"; // Import added for formatting
+
 export default function AdminEmpresas() {
   const [isNovaEmpresaOpen, setIsNovaEmpresaOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -26,14 +28,18 @@ export default function AdminEmpresas() {
       while (hasMore) {
         const { data, error } = await supabase
           .from("colaboradores")
-          .select(`
+          .select(
+            `
             nome,
+            cpf,
+            data_nascimento,
             sexo,
             salario,
             classificacao_salario,
             empresas!inner(nome),
             obras(nome)
-          `)
+          `,
+          )
           .eq("status", "ativo")
           .order("nome")
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
@@ -58,11 +64,15 @@ export default function AdminEmpresas() {
       const data = allData;
 
       const dadosFormatados = data.map((colab: any) => ({
-        "Empresa": colab.empresas?.nome || "",
-        "Obra": colab.obras?.nome || "Sem obra",
-        "Nome": colab.nome || "",
-        "Sexo": colab.sexo || "",
-        "Salário": colab.salario 
+        Empresa: colab.empresas?.nome || "",
+        Obra: colab.obras?.nome || "Sem obra",
+        Nome: colab.nome || "",
+        CPF: colab.cpf ? formatCPF(colab.cpf) : "",
+        "Data de Nascimento": colab.data_nascimento
+          ? new Date(colab.data_nascimento + "T12:00:00").toLocaleDateString("pt-BR")
+          : "",
+        Sexo: colab.sexo || "",
+        Salário: colab.salario
           ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(colab.salario)
           : "",
         "Classificação do Salário": colab.classificacao_salario || "",
@@ -76,7 +86,8 @@ export default function AdminEmpresas() {
       });
 
       const ws = XLSX.utils.json_to_sheet(dadosFormatados);
-      ws["!cols"] = Array(6).fill({ wch: 35 });
+      // Adjusted column widths to accommodate new fields (8 columns total now)
+      ws["!cols"] = Array(8).fill({ wch: 25 });
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Vidas Ativas");
@@ -91,7 +102,8 @@ export default function AdminEmpresas() {
     }
   };
 
-  return <div className="space-y-6 animate-in fade-in duration-500">
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 className="h-8 w-8 text-primary" />
@@ -120,13 +132,16 @@ export default function AdminEmpresas() {
             Ativos
           </TabsTrigger>
 
-          {/* 2. INATIVOS (Movido para o meio) */}
-          <TabsTrigger value="inativos" className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-red-600">
+          {/* 2. INATIVOS */}
+          <TabsTrigger
+            value="inativos"
+            className="flex items-center gap-2 text-muted-foreground data-[state=active]:text-red-600"
+          >
             <ArchiveX className="h-4 w-4" />
             Inativas
           </TabsTrigger>
 
-          {/* 3. CRM (Movido para o fim) */}
+          {/* 3. CRM */}
           <TabsTrigger value="crm" className="flex items-center gap-2">
             <KanbanSquare className="h-4 w-4" />
             CRM
@@ -147,5 +162,6 @@ export default function AdminEmpresas() {
       </Tabs>
 
       <NovaEmpresaDialog open={isNovaEmpresaOpen} onOpenChange={setIsNovaEmpresaOpen} />
-    </div>;
+    </div>
+  );
 }
