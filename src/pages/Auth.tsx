@@ -70,8 +70,8 @@ const Auth = () => {
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]" />
 
         <div className="relative z-20 flex items-center p-10 font-medium text-lg">
-          <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
-            <img src={logoSidebar} alt="VV Logo" className="h-8 w-auto" />
+          <div className="bg-white p-3 rounded-xl shadow-lg animate-pulse">
+            <img src={logoSidebar} alt="VV Logo" className="h-10 w-auto" />
           </div>
           <span className="ml-3 font-semibold tracking-wide">VV Benefícios</span>
         </div>
