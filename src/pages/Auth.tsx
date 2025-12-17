@@ -8,43 +8,45 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, Lock, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import logo from "@/assets/logo-vv-beneficios.png";
 import logoSidebar from "@/assets/logo-vv-sidebar.png";
-
 const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const { signIn, user } = useAuth();
-  const { toast } = useToast();
+  const {
+    signIn,
+    user
+  } = useAuth();
+  const {
+    toast
+  } = useToast();
   const navigate = useNavigate();
 
   // Cores do sistema para consistência
   const BRAND_COLOR = "#203455";
-
   useEffect(() => {
     if (user) {
       navigate("/");
     }
   }, [user, navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const { error } = await signIn(email, password);
+      const {
+        error
+      } = await signIn(email, password);
       if (error) {
         toast({
           title: "Acesso Negado",
           description: "Credenciais inválidas. Verifique seu e-mail e senha.",
-          variant: "destructive",
+          variant: "destructive"
         });
       } else {
         toast({
           title: "Bem-vindo de volta!",
           description: "Login realizado com sucesso.",
-          action: <CheckCircle2 className="h-5 w-5 text-green-500" />,
+          action: <CheckCircle2 className="h-5 w-5 text-green-500" />
         });
         navigate("/");
       }
@@ -52,29 +54,25 @@ const Auth = () => {
       toast({
         title: "Erro de Conexão",
         description: "Não foi possível conectar ao servidor. Tente novamente.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
-
-  return (
-    <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
+  return <div className="w-full min-h-screen lg:grid lg:grid-cols-2">
       {/* COLUNA ESQUERDA - BRANDING & VISUAL */}
       <div className="hidden lg:flex relative flex-col bg-muted text-white dark:border-r overflow-hidden">
         {/* Fundo Base */}
-        <div className="absolute inset-0" style={{ backgroundColor: BRAND_COLOR }} />
+        <div className="absolute inset-0" style={{
+        backgroundColor: BRAND_COLOR
+      }} />
 
         {/* IMAGEM DE FUNDO COM BLEND MODE */}
         {/* Usando uma imagem de escritório/negócios abstrata para dar contexto */}
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-20 mix-blend-overlay"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1600')",
-          }}
-        />
+        <div className="absolute inset-0 bg-cover bg-center opacity-20 mix-blend-overlay" style={{
+        backgroundImage: "url('https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1600')"
+      }} />
 
         {/* Gradiente Overlay para garantir legibilidade do texto */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#203455] via-[#203455]/80 to-transparent" />
@@ -84,16 +82,12 @@ const Auth = () => {
           <div className="bg-white p-3 rounded-xl shadow-lg">
             <img src={logoSidebar} alt="VV Logo" className="h-10 w-auto" />
           </div>
-          <span className="ml-3 font-semibold tracking-wide text-xl text-white">Sistema VV Benefícios</span>
+          
         </div>
 
         {/* IMAGEM ILUSTRATIVA CENTRAL (A que você pediu) */}
         <div className="relative z-10 flex-1 flex items-center justify-center p-12">
-          <img
-            src="https://illustrations.popsy.co/amber/success.svg"
-            alt="Gestão de Sucesso"
-            className="w-full max-w-md drop-shadow-2xl opacity-90 transform hover:scale-105 transition-transform duration-700"
-          />
+          
         </div>
 
         {/* Footer da Coluna Esquerda */}
@@ -131,19 +125,7 @@ const Auth = () => {
                   </Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="email"
-                      placeholder="nome@empresa.com"
-                      type="email"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      autoCorrect="off"
-                      disabled={loading}
-                      className="pl-10 h-11 border-gray-300 focus:border-[#203455] focus:ring-[#203455]"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
+                    <Input id="email" placeholder="nome@empresa.com" type="email" autoCapitalize="none" autoComplete="email" autoCorrect="off" disabled={loading} className="pl-10 h-11 border-gray-300 focus:border-[#203455] focus:ring-[#203455]" value={email} onChange={e => setEmail(e.target.value)} required />
                   </div>
                 </div>
 
@@ -159,41 +141,18 @@ const Auth = () => {
                   </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      autoCapitalize="none"
-                      autoComplete="current-password"
-                      disabled={loading}
-                      className="pl-10 pr-10 h-11 border-gray-300 focus:border-[#203455] focus:ring-[#203455]"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-3 text-muted-foreground hover:text-[#203455] transition-colors"
-                      tabIndex={-1}
-                    >
+                    <Input id="password" type={showPassword ? "text" : "password"} placeholder="••••••••" autoCapitalize="none" autoComplete="current-password" disabled={loading} className="pl-10 pr-10 h-11 border-gray-300 focus:border-[#203455] focus:ring-[#203455]" value={password} onChange={e => setPassword(e.target.value)} required />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-muted-foreground hover:text-[#203455] transition-colors" tabIndex={-1}>
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
 
-                <Button
-                  disabled={loading}
-                  className="h-11 bg-[#203455] hover:bg-[#2c456b] text-white font-bold tracking-wide transition-all duration-200 shadow-lg hover:shadow-xl mt-2"
-                >
-                  {loading ? (
-                    <div className="flex items-center gap-2">
+                <Button disabled={loading} className="h-11 bg-[#203455] hover:bg-[#2c456b] text-white font-bold tracking-wide transition-all duration-200 shadow-lg hover:shadow-xl mt-2">
+                  {loading ? <div className="flex items-center gap-2">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Autenticando...
-                    </div>
-                  ) : (
-                    "Entrar na Plataforma"
-                  )}
+                    </div> : "Entrar na Plataforma"}
                 </Button>
               </div>
             </form>
@@ -221,8 +180,6 @@ const Auth = () => {
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Auth;
