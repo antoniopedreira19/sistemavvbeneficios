@@ -53,6 +53,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"];
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
 const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"];
+const COLORS_AGE = ["#06b6d4", "#0891b2", "#0e7490", "#155e75", "#164e63", "#134e4a"];
 
 export default function Dashboard() {
   const [selectedCompetencia, setSelectedCompetencia] = useState<string>("");
@@ -125,7 +126,7 @@ export default function Dashboard() {
       // D. Dados Detalhados dos Colaboradores
       let colaboradoresDetalhados: any[] = [];
       if (lotesIds.length > 0) {
-        const { data } = await supabase.from("colaboradores_lote").select("sexo, salario").in("lote_id", lotesIds);
+        const { data } = await supabase.from("colaboradores_lote").select("sexo, salario, data_nascimento").in("lote_id", lotesIds);
         colaboradoresDetalhados = data || [];
       }
 
@@ -210,6 +211,45 @@ export default function Dashboard() {
     quantidade: r.count,
     pct: totalVidasMes > 0 ? ((r.count / totalVidasMes) * 100).toFixed(1) + "%" : "0%",
   }));
+
+  // Função para calcular idade
+  const calcularIdade = (dataNascimento: string) => {
+    const hoje = new Date();
+    const nascimento = new Date(dataNascimento);
+    let idade = hoje.getFullYear() - nascimento.getFullYear();
+    const mesAtual = hoje.getMonth();
+    const mesNasc = nascimento.getMonth();
+    if (mesAtual < mesNasc || (mesAtual === mesNasc && hoje.getDate() < nascimento.getDate())) {
+      idade--;
+    }
+    return idade;
+  };
+
+  // Gráfico Idade
+  const ageRanges = [
+    { label: "18-25", min: 18, max: 25, count: 0 },
+    { label: "26-35", min: 26, max: 35, count: 0 },
+    { label: "36-45", min: 36, max: 45, count: 0 },
+    { label: "46-55", min: 46, max: 55, count: 0 },
+    { label: "56-65", min: 56, max: 65, count: 0 },
+    { label: "65+", min: 66, max: 999, count: 0 },
+  ];
+
+  dashboardData?.colaboradores.forEach((c) => {
+    if (c.data_nascimento) {
+      const idade = calcularIdade(c.data_nascimento);
+      const range = ageRanges.find((r) => idade >= r.min && idade <= r.max);
+      if (range) range.count++;
+    }
+  });
+
+  const ageChartData = ageRanges.map((r) => ({
+    name: r.label,
+    quantidade: r.count,
+    pct: totalVidasMes > 0 ? ((r.count / totalVidasMes) * 100).toFixed(1) + "%" : "0%",
+  }));
+
+  const totalComIdade = ageChartData.reduce((acc, curr) => acc + curr.quantidade, 0);
 
   // Gráfico Evolução
   const evolutionMap = dashboardData?.historicoLotes?.reduce((acc: any, curr) => {
@@ -440,7 +480,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -505,6 +545,45 @@ export default function Dashboard() {
                     <Bar dataKey="quantidade" fill="#8884d8" radius={[0, 4, 4, 0]} barSize={25}>
                       {salaryChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS_SALARY[index % COLORS_SALARY.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">Sem dados.</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-5 w-5 text-cyan-600" /> Distribuição por Idade
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px] w-full">
+              {totalComIdade > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={ageChartData}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" width={50} fontSize={12} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      cursor={{ fill: "transparent" }}
+                      formatter={(value: number, name: string, props: any) => [
+                        `${value} pessoas (${props.payload.pct})`,
+                        "Quantidade",
+                      ]}
+                    />
+                    <Bar dataKey="quantidade" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={25}>
+                      {ageChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS_AGE[index % COLORS_AGE.length]} />
                       ))}
                     </Bar>
                   </BarChart>
