@@ -151,6 +151,12 @@ export default function Dashboard() {
         .eq("status", "ativa")
         .eq("colaboradores.status", "ativo");
 
+      // H. TODAS AS VIDAS ATIVAS (para gráfico de idade)
+      const { data: todasVidasAtivas } = await supabase
+        .from("colaboradores")
+        .select("data_nascimento")
+        .eq("status", "ativo");
+
       return {
         empresasAtivas: empresasAtivas || 0,
         totalVidasAtivas: totalVidasAtivas || 0,
@@ -159,6 +165,7 @@ export default function Dashboard() {
         notasMes: notasMes || [],
         historicoLotes: historicoLotes || [],
         allActiveCompanies: allActiveCompanies || [],
+        todasVidasAtivas: todasVidasAtivas || [],
       };
     },
   });
@@ -226,7 +233,7 @@ export default function Dashboard() {
     return idade;
   };
 
-  // Gráfico Idade
+  // Gráfico Idade (usando TODAS as vidas ativas cadastradas)
   const ageRanges = [
     { label: "18-25", min: 18, max: 25, count: 0 },
     { label: "26-35", min: 26, max: 35, count: 0 },
@@ -236,7 +243,7 @@ export default function Dashboard() {
     { label: "65+", min: 66, max: 999, count: 0 },
   ];
 
-  dashboardData?.colaboradores.forEach((c) => {
+  dashboardData?.todasVidasAtivas?.forEach((c) => {
     if (c.data_nascimento) {
       const idade = calcularIdade(c.data_nascimento);
       const range = ageRanges.find((r) => idade >= r.min && idade <= r.max);
@@ -244,13 +251,13 @@ export default function Dashboard() {
     }
   });
 
+  const totalComIdade = ageRanges.reduce((acc, r) => acc + r.count, 0);
+
   const ageChartData = ageRanges.map((r) => ({
     name: r.label,
     quantidade: r.count,
-    pct: totalVidasMes > 0 ? ((r.count / totalVidasMes) * 100).toFixed(1) + "%" : "0%",
+    pct: totalComIdade > 0 ? ((r.count / totalComIdade) * 100).toFixed(1) + "%" : "0%",
   }));
-
-  const totalComIdade = ageChartData.reduce((acc, curr) => acc + curr.quantidade, 0);
 
   // Gráfico Evolução
   const evolutionMap = dashboardData?.historicoLotes?.reduce((acc: any, curr) => {
