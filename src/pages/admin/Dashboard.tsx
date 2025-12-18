@@ -44,13 +44,14 @@ import {
   Pie,
   Cell,
   Legend,
+  LabelList,
 } from "recharts";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Cores para gráficos
-const COLORS_GENDER = ["#0088FE", "#FF8042", "#8884d8"];
+const COLORS_GENDER = ["#1e3a5f", "#be185d"]; // Azul escuro, Rosa escuro
 const COLORS_SALARY = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#0088fe"];
 const COLORS_TOP5 = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d"];
 const COLORS_AGE = ["#06b6d4", "#0891b2", "#0e7490", "#155e75", "#164e63", "#134e4a"];
@@ -500,7 +501,7 @@ export default function Dashboard() {
                       outerRadius={100}
                       paddingAngle={5}
                       dataKey="value"
-                      label={({ name, pct }) => `${name} (${pct})`}
+                      label={({ pct }) => pct}
                     >
                       {genderChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS_GENDER[index % COLORS_GENDER.length]} />
@@ -585,6 +586,7 @@ export default function Dashboard() {
                       {ageChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS_AGE[index % COLORS_AGE.length]} />
                       ))}
+                      <LabelList dataKey="pct" position="right" fontSize={11} fill="#374151" />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
