@@ -124,11 +124,31 @@ export default function Dashboard() {
 
       const lotesIds = lotesMes?.map((l) => l.id) || [];
 
-      // D. Dados Detalhados dos Colaboradores
+      // D. Dados Detalhados dos Colaboradores (com paginação para pegar todos)
       let colaboradoresDetalhados: any[] = [];
       if (lotesIds.length > 0) {
-        const { data } = await supabase.from("colaboradores_lote").select("sexo, salario, data_nascimento").in("lote_id", lotesIds);
-        colaboradoresDetalhados = data || [];
+        const pageSize = 1000;
+        let page = 0;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const start = page * pageSize;
+          const end = start + pageSize - 1;
+          
+          const { data } = await supabase
+            .from("colaboradores_lote")
+            .select("sexo, salario, data_nascimento")
+            .in("lote_id", lotesIds)
+            .range(start, end);
+          
+          if (data && data.length > 0) {
+            colaboradoresDetalhados = [...colaboradoresDetalhados, ...data];
+            hasMore = data.length === pageSize;
+            page++;
+          } else {
+            hasMore = false;
+          }
+        }
       }
 
       // E. Faturamento Realizado
@@ -151,12 +171,6 @@ export default function Dashboard() {
         .eq("status", "ativa")
         .eq("colaboradores.status", "ativo");
 
-      // H. TODAS AS VIDAS ATIVAS (para gráfico de idade)
-      const { data: todasVidasAtivas } = await supabase
-        .from("colaboradores")
-        .select("data_nascimento")
-        .eq("status", "ativo");
-
       return {
         empresasAtivas: empresasAtivas || 0,
         totalVidasAtivas: totalVidasAtivas || 0,
@@ -165,7 +179,6 @@ export default function Dashboard() {
         notasMes: notasMes || [],
         historicoLotes: historicoLotes || [],
         allActiveCompanies: allActiveCompanies || [],
-        todasVidasAtivas: todasVidasAtivas || [],
       };
     },
   });
@@ -233,7 +246,7 @@ export default function Dashboard() {
     return idade;
   };
 
-  // Gráfico Idade (usando TODAS as vidas ativas cadastradas)
+  // Gráfico Idade (usando vidas do mês selecionado - colaboradores_lote)
   const ageRanges = [
     { label: "18-25", min: 18, max: 25, count: 0 },
     { label: "26-35", min: 26, max: 35, count: 0 },
@@ -243,7 +256,7 @@ export default function Dashboard() {
     { label: "65+", min: 66, max: 999, count: 0 },
   ];
 
-  dashboardData?.todasVidasAtivas?.forEach((c) => {
+  dashboardData?.colaboradores?.forEach((c) => {
     if (c.data_nascimento) {
       const idade = calcularIdade(c.data_nascimento);
       const range = ageRanges.find((r) => idade >= r.min && idade <= r.max);
