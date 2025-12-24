@@ -192,6 +192,32 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
 
   const [colaboradores, setColaboradores] = useState<ValidatedRow[]>([]);
 
+  // Gera lista de competências (últimos 2 meses + próximos 6 meses)
+  const gerarCompetencias = () => {
+    const meses = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    const hoje = new Date();
+    const competencias: string[] = [];
+    
+    // Últimos 2 meses
+    for (let i = 2; i >= 1; i--) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      competencias.push(`${meses[d.getMonth()]}/${d.getFullYear()}`);
+    }
+    
+    // Mês atual + próximos 6 meses
+    for (let i = 0; i <= 6; i++) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+      competencias.push(`${meses[d.getMonth()]}/${d.getFullYear()}`);
+    }
+    
+    return competencias;
+  };
+
+  const competenciasDisponiveis = gerarCompetencias();
+
   useEffect(() => {
     if (open) {
       supabase
@@ -201,22 +227,13 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
         .order("nome")
         .then(({ data }) => setEmpresas((data as EmpresaComCNPJ[]) || []));
 
-      const data = new Date();
+      // Define competência atual como padrão
       const meses = [
-        "Janeiro",
-        "Fevereiro",
-        "Março",
-        "Abril",
-        "Maio",
-        "Junho",
-        "Julho",
-        "Agosto",
-        "Setembro",
-        "Outubro",
-        "Novembro",
-        "Dezembro",
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
       ];
-      setCompetencia(`${meses[data.getMonth()]}/${data.getFullYear()}`);
+      const hoje = new Date();
+      setCompetencia(`${meses[hoje.getMonth()]}/${hoje.getFullYear()}`);
 
       // Resetar estados ao abrir
       setStep("selecao");
@@ -747,11 +764,18 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
               {selectedObra && (
                 <div className="space-y-2">
                   <Label>Competência (Mês/Ano)</Label>
-                  <Input
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    placeholder="Ex: Janeiro/2025"
-                  />
+                  <Select value={competencia} onValueChange={setCompetencia}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a competência..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {competenciasDisponiveis.map((comp) => (
+                        <SelectItem key={comp} value={comp}>
+                          {comp}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
