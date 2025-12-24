@@ -454,16 +454,29 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
     try {
       const valorTotal = validos.reduce((acc, c) => acc + 50, 0);
 
+      // Debug: verificar valores exatos da busca
+      console.log("Buscando lote existente:", {
+        empresa_id: selectedEmpresa,
+        obra_id: selectedObra,
+        competencia: competencia,
+      });
+
+      // Buscar lote existente com a MESMA competência
       const { data: loteExistente } = await supabase
         .from("lotes_mensais")
-        .select("id")
+        .select("id, competencia")
         .eq("empresa_id", selectedEmpresa)
         .eq("obra_id", selectedObra)
         .eq("competencia", competencia)
         .maybeSingle();
 
+      console.log("Lote existente encontrado:", loteExistente);
+
       if (loteExistente) {
+        // Já existe um lote com MESMA empresa + obra + competência - SUBSTITUIR
         loteIdCriado = loteExistente.id;
+        
+        toast.info(`Substituindo lote existente de ${competencia}...`);
         
         // Deleta colaboradores_lote antigos primeiro
         await supabase.from("colaboradores_lote").delete().eq("lote_id", loteIdCriado);
@@ -488,6 +501,9 @@ export function AdminImportarLoteDialog({ open, onOpenChange }: { open: boolean;
           })
           .eq("id", loteIdCriado);
       } else {
+        // NÃO existe lote com essa competência - CRIAR NOVO
+        toast.info(`Criando novo lote para ${competencia}...`);
+        
         const { data: novoLote, error: createError } = await supabase
           .from("lotes_mensais")
           .insert({
