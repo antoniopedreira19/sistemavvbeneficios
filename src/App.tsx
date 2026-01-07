@@ -13,6 +13,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/admin/Dashboard";
 import Operacional from "./pages/admin/Operacional";
 import NotasFiscais from "./pages/admin/NotasFiscais";
+import HistoricoAdmin from "./pages/admin/HistoricoAdmin";
 import AdminEmpresas from "./pages/admin/AdminEmpresas";
 import Configuracoes from "./pages/admin/Configuracoes";
 
@@ -93,6 +94,16 @@ const App = () => (
             <ProtectedRoute requireAdmin>
               <DashboardLayout>
                 <AdminEmpresas />
+              </DashboardLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/historico"
+          element={
+            <ProtectedRoute requireAdmin>
+              <DashboardLayout>
+                <HistoricoAdmin />
               </DashboardLayout>
             </ProtectedRoute>
           }

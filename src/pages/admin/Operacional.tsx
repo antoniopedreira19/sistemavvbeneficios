@@ -47,13 +47,32 @@ const ITEMS_PER_PAGE = 10;
 type TabType = "entrada" | "seguradora" | "pendencia" | "concluido";
 type SortType = "alfabetica" | "recente";
 
+// Gerar competências para o filtro
+const gerarCompetencias = (): string[] => {
+  const competencias: string[] = [];
+  const hoje = new Date();
+  
+  for (let i = -12; i <= 6; i++) {
+    const data = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    const mes = data.toLocaleString("pt-BR", { month: "long" });
+    const mesCapitalizado = mes.charAt(0).toUpperCase() + mes.slice(1);
+    const ano = data.getFullYear().toString().slice(-2);
+    competencias.push(`${mesCapitalizado}/${ano}`);
+  }
+  
+  return competencias;
+};
+
 export default function Operacional() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("entrada");
 
   // Estados de Filtro e Ordenação
   const [searchTerm, setSearchTerm] = useState("");
+  const [competenciaFilter, setCompetenciaFilter] = useState<string>("todas");
   const [sortBy, setSortBy] = useState<SortType>("alfabetica");
+
+  const competencias = gerarCompetencias();
 
   const [pages, setPages] = useState<Record<TabType, number>>({
     entrada: 1,
@@ -101,9 +120,11 @@ export default function Operacional() {
 
   // --- Lógica de Filtragem e Ordenação Dinâmica ---
   const filteredLotes = lotes
-    .filter((l) =>
-      l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    .filter((l) => {
+      const matchSearch = l.empresa?.nome?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCompetencia = competenciaFilter === "todas" || l.competencia === competenciaFilter;
+      return matchSearch && matchCompetencia;
+    })
     .sort((a, b) => {
       if (sortBy === "alfabetica") {
         return (a.empresa?.nome || "").localeCompare(b.empresa?.nome || "");
@@ -121,7 +142,8 @@ export default function Operacional() {
       case "pendencia":
         return filteredLotes.filter((l) => l.status === "com_pendencia");
       case "concluido":
-        return filteredLotes.filter((l) => l.status === "concluido" || l.status === "faturado");
+        // Apenas lotes concluídos (não faturados) aparecem em "Prontos"
+        return filteredLotes.filter((l) => l.status === "concluido");
       default:
         return [];
     }
@@ -418,6 +440,26 @@ export default function Operacional() {
               }}
             />
           </div>
+
+          <Select
+            value={competenciaFilter}
+            onValueChange={(v) => {
+              setCompetenciaFilter(v);
+              setPages({ entrada: 1, seguradora: 1, pendencia: 1, concluido: 1 });
+            }}
+          >
+            <SelectTrigger className="w-full md:w-[180px] bg-background">
+              <SelectValue placeholder="Competência" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as competências</SelectItem>
+              {competencias.map((comp) => (
+                <SelectItem key={comp} value={comp}>
+                  {comp}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortType)}>
             <SelectTrigger className="w-full md:w-[180px] bg-background">
