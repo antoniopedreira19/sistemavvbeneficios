@@ -151,12 +151,12 @@ export default function Dashboard() {
         }
       }
 
-      // E. Faturamento Realizado
-      const { data: notasMes } = await supabase
-        .from("notas_fiscais")
-        .select("valor_total")
+      // E. Faturamento Realizado (lotes faturados × 50)
+      const { data: lotesFaturados } = await supabase
+        .from("lotes_mensais")
+        .select("total_colaboradores")
         .eq("competencia", selectedCompetencia)
-        .eq("nf_emitida", true);
+        .eq("status", "faturado");
 
       // F. Histórico
       const { data: historicoLotes } = await supabase
@@ -176,7 +176,7 @@ export default function Dashboard() {
         totalVidasAtivas: totalVidasAtivas || 0,
         lotesMes: lotesMes || [],
         colaboradores: colaboradoresDetalhados,
-        notasMes: notasMes || [],
+        lotesFaturados: lotesFaturados || [],
         historicoLotes: historicoLotes || [],
         allActiveCompanies: allActiveCompanies || [],
       };
@@ -187,7 +187,8 @@ export default function Dashboard() {
 
   // KPIs
   const totalEmpresasNoMes = new Set(dashboardData?.lotesMes.map((l) => l.empresa_id)).size || 0;
-  const faturamentoRealizado = dashboardData?.notasMes.reduce((acc, nf) => acc + Number(nf.valor_total), 0) || 0;
+  const vidasFaturadas = dashboardData?.lotesFaturados?.reduce((acc, lote) => acc + (lote.total_colaboradores || 0), 0) || 0;
+  const faturamentoRealizado = vidasFaturadas * 50;
   const totalVidasMes = dashboardData?.lotesMes.reduce((acc, l) => acc + (l.total_colaboradores || 0), 0) || 0;
   
   // Faturamento esperado = apenas vidas que ENVIARAM no mês * R$50
@@ -394,7 +395,7 @@ export default function Dashboard() {
           title="Faturamento Real"
           value={`R$ ${faturamentoRealizado.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
           icon={DollarSign}
-          description="Notas Emitidas"
+          description={`${vidasFaturadas} vidas faturadas × R$50`}
           iconColor="text-green-600"
           highlight
         />
