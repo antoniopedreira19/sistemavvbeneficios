@@ -24,6 +24,7 @@ const adminItems = [
   { title: "Visão Geral", url: "/admin/dashboard", icon: LayoutDashboard },
   { title: "Operacional", url: "/admin/operacional", icon: Briefcase },
   { title: "Financeiro", url: "/admin/financeiro", icon: Receipt, adminOrFinanceiro: true },
+  { title: "Histórico", url: "/admin/historico", icon: History },
   { title: "Empresas", url: "/admin/empresas", icon: Building2 },
   { title: "Configurações", url: "/admin/configuracoes", icon: Settings, adminOnly: true },
 ];
