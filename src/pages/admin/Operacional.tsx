@@ -56,7 +56,7 @@ const gerarCompetencias = (): string[] => {
     const data = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
     const mes = data.toLocaleString("pt-BR", { month: "long" });
     const mesCapitalizado = mes.charAt(0).toUpperCase() + mes.slice(1);
-    const ano = data.getFullYear().toString().slice(-2);
+    const ano = data.getFullYear(); // Ano completo (2025, 2026)
     competencias.push(`${mesCapitalizado}/${ano}`);
   }
   
